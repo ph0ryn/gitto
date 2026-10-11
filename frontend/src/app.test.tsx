@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import App from "./app";
 import type { TreeEntry } from "./fileTree";
+import { version } from "../package.json";
 
 const repo = {
   name: "sample-repo",
@@ -1197,7 +1198,40 @@ describe("App", () => {
 
     const content = screen.getByRole("region", { name: "Repository content" });
     expect(await within(content).findByRole("heading", { name: "src/main.ts" })).toBeVisible();
-    expect(within(screen.getByLabelText("Repository path")).getByText("Read-only")).toBeVisible();
+    expect(
+      within(screen.getByLabelText("Repository information")).getByText(
+        "A read-only local Git browser",
+      ),
+    ).toBeVisible();
+  });
+
+  it("groups the repository details before the app name, description, and version in the footer", async () => {
+    installFetch();
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(await screen.findByRole("button", { name: "README.md" }));
+    await screen.findByText("# gitto");
+
+    const footer = screen.getByLabelText("Repository information");
+    const details = [
+      within(footer).getByText(repo.path),
+      within(footer).getByText("HEAD · abc1234"),
+      within(footer).getByText("7 B"),
+      within(footer).getByText("Gitto"),
+      within(footer).getByText("A read-only local Git browser"),
+      within(footer).getByText(`v${version}`),
+    ];
+    for (let index = 1; index < details.length; index++) {
+      expect(
+        details[index - 1].compareDocumentPosition(details[index]) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+    }
+    expect(details[0]).toHaveAttribute("title", repo.path);
+    expect(details[1]).toHaveAttribute("title", commits.commits[0].id);
+
+    await user.click(screen.getByRole("button", { name: "Close view" }));
+    expect(within(footer).queryByText("7 B")).not.toBeInTheDocument();
   });
 
   it("places files, content, changes, and history in the requested reading order", async () => {
@@ -1211,7 +1245,7 @@ describe("App", () => {
     expect(within(content).queryByRole("heading")).not.toBeInTheDocument();
     const changes = screen.getByRole("complementary", { name: "Changed files" });
     const history = screen.getByRole("complementary", { name: "Commit history" });
-    const footer = screen.getByLabelText("Repository path");
+    const footer = screen.getByLabelText("Repository information");
     expect(within(footer).getByText("HEAD · abc1234")).toBeInTheDocument();
     for (const [left, right] of [
       [files, content],
@@ -1312,7 +1346,7 @@ describe("App", () => {
     expect(document.querySelector(".diff-new.added")).toHaveTextContent("1");
     expect(document.querySelector(".diff-sign.added")).toHaveTextContent("+");
     expect(
-      within(screen.getByLabelText("Repository path")).getByText("Commit abc12345"),
+      within(screen.getByLabelText("Repository information")).getByText("Commit abc12345"),
     ).toBeInTheDocument();
   });
 
@@ -1382,7 +1416,7 @@ describe("App", () => {
     expect(
       screen.getByRole("button", { name: "src/main.ts diff (Staged · modified)" }),
     ).toBeVisible();
-    expect(screen.getByLabelText("Repository path")).toHaveTextContent("HEAD · abc1234");
+    expect(screen.getByLabelText("Repository information")).toHaveTextContent("HEAD · abc1234");
     expect(fetchMock).toHaveBeenCalledWith("/api/commits?revision=HEAD&offset=0&limit=50");
     expect(fetchMock).toHaveBeenCalledWith("/api/tree?revision=HEAD&path=");
   });

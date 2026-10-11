@@ -371,32 +371,50 @@ summary.tree-row::-webkit-details-marker {
 }
 .repo-footer {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  flex: 0 0 32px;
+  flex: 0 0 auto;
+  min-height: 32px;
   min-width: 0;
-  gap: 16px;
-  padding: 0 14px;
+  gap: 6px 16px;
+  padding: 6px 14px;
   border-top: 1px solid var(--line);
   background: #f5f6f8;
+  color: var(--muted);
+  font-size: 11px;
 }
 .repo-path {
   min-width: 0;
   overflow: hidden;
-  color: var(--muted);
-  font-size: 11px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .footer-meta {
   display: flex;
   align-items: center;
-  flex-shrink: 0;
-  gap: 16px;
-  color: var(--muted);
-  font-size: 11px;
+  flex: 1 1 240px;
+  min-width: 0;
+  gap: 10px;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+}
+.repo-revision,
+.repo-size,
+.footer-separator {
+  flex-shrink: 0;
+}
+.footer-brand {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  margin-inline-start: auto;
+  gap: 4px 8px;
+}
+.footer-brand strong {
+  color: var(--ink);
+  font-weight: 600;
 }
 .viewer-heading {
   gap: 10px;
@@ -839,10 +857,6 @@ summary.tree-row::-webkit-details-marker {
 .viewer-content > .empty-state p {
   font-size: 13px;
 }
-.readonly-label {
-  padding-right: 16px;
-  border-right: 1px solid #d6dce5;
-}
 .app-state {
   display: grid;
   height: 100dvh;
@@ -876,13 +890,10 @@ summary.tree-row::-webkit-details-marker {
 @media (max-width: 600px) {
   .repo-footer {
     padding-inline: 12px;
-    gap: 12px;
+    gap: 6px 12px;
   }
   .footer-meta {
     gap: 8px;
-  }
-  .readonly-label {
-    padding-right: 8px;
   }
 }
 

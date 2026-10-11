@@ -131,9 +131,9 @@ gittoは、明るい室内で開発者がローカルGitを読み解くような
 
 左からfiles、viewer、changes、historyの4ペインを置く。基準幅は220px、viewerは360px以上の可変幅、changesは260px、historyは260pxである。各ペインは境界を保ったまま内部だけがスクロールし、本文の増加で隣の境界を動かさない。
 
-見出しは52px、filesの補助toolbarは38px、ツリー行は30px、footerは32pxである。viewerの見出しでは親パスをmutedにし、filenameをsemiboldで表示する。footerは画面全幅に残り、repository path、Read-only、閲覧中のHEADまたはcommit位置を示す。
+見出しは52px、filesの補助toolbarは38px、ツリー行は30px、footerは32px以上である。viewerの見出しでは親パスをmutedにし、filenameをsemiboldで表示する。footerは画面全幅に残り、左にrepository path、閲覧中のHEADまたはcommit位置、開いているファイルのサイズを区切り付きで示す。右にはGitto、読み取り専用の説明、バージョンを並べる。
 
-狭い画面では4ペインを縦積みにせず、workspaceだけを水平にパンする。footerは全幅を保ち、600px以下では左右paddingとmetadata間隔を狭める。画面全体の縦スクロールは発生させない。
+狭い画面では4ペインを縦積みにせず、workspaceだけを水平にパンする。footerは全幅を保ち、収まらない場合は右の製品情報を次の行へ折り返す。長いrepository pathは省略し、600px以下では左右paddingとmetadata間隔を狭める。画面全体の縦スクロールは発生させない。
 
 ## Elevation & Depth
 

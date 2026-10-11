@@ -9,6 +9,7 @@ import ChangeTree, {
   changeKey,
   type ChangeEntry,
 } from "./changeTree";
+import { version } from "../package.json";
 
 type Branch = { name: string; revision: string };
 type Repo = {
@@ -839,20 +840,34 @@ export default function App() {
           </div>
         </aside>
       </div>
-      <footer className="repo-footer" aria-label="Repository path">
-        <span className="repo-path" title={repo?.path}>
-          {repo?.path}
-        </span>
+      <footer className="repo-footer" aria-label="Repository information">
         <span className="footer-meta">
-          <span className="readonly-label">Read-only</span>
-          {fileView && <span>{formatBytes(fileView.size)}</span>}
-          <span title={selectedCommit ?? commits[0]?.id}>
+          <span className="repo-path" title={repo?.path}>
+            {repo?.path}
+          </span>
+          <span className="footer-separator" aria-hidden="true">
+            |
+          </span>
+          <span className="repo-revision" title={selectedCommit ?? commits[0]?.id}>
             {selectedCommit
               ? `Commit ${selectedCommit.slice(0, 8)}`
               : revision === "HEAD"
                 ? `HEAD${commits[0] ? ` · ${commits[0].shortId}` : " (unborn)"}`
                 : commits[0]?.shortId}
           </span>
+          {fileView && (
+            <>
+              <span className="footer-separator" aria-hidden="true">
+                |
+              </span>
+              <span className="repo-size">{formatBytes(fileView.size)}</span>
+            </>
+          )}
+        </span>
+        <span className="footer-brand">
+          <strong>Gitto</strong>
+          <span>A read-only local Git browser</span>
+          <span>v{version}</span>
         </span>
       </footer>
     </main>
