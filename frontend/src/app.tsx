@@ -125,6 +125,7 @@ export default function App() {
   const [viewLabel, setViewLabel] = useState("ファイルを選択してください");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [refreshingStatus, setRefreshingStatus] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const loadWorkspace = useCallback(async () => {
@@ -168,6 +169,10 @@ export default function App() {
   useEffect(() => {
     void loadWorkspace();
   }, [loadWorkspace]);
+
+  useEffect(() => {
+    if (repo) document.title = `${repo.name} | gitto`;
+  }, [repo]);
 
   const sortedTree = useMemo(
     () =>
@@ -336,6 +341,18 @@ export default function App() {
     }
   }
 
+  async function refreshStatus() {
+    setRefreshingStatus(true);
+    setError(null);
+    try {
+      setStatus(await api<Status>("/api/status"));
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "変更を読み込めませんでした");
+    } finally {
+      setRefreshingStatus(false);
+    }
+  }
+
   async function loadMore() {
     setBusy(true);
     try {
@@ -393,17 +410,6 @@ export default function App() {
   const showHeadOption = Boolean(
     repo && (!repo.head || !repo.branches.some((branch) => branch.name === repo.head)),
   );
-  const selectedBranch = repo?.branches.find((branch) => branch.revision === revision);
-  const activeBranch = repo?.branches.find((branch) => branch.revision === selectedBranchRevision);
-  const revisionLabel = selectedCommit
-    ? `コミット ${selectedCommit.slice(0, 8)}`
-    : (activeBranch?.name ??
-      selectedBranch?.name ??
-      (revision === "HEAD"
-        ? repo?.head
-          ? `HEAD ${repo.head.slice(0, 8)}`
-          : "HEAD未作成"
-        : `revision ${revision.slice(0, 8)}`));
 
   if (loading) {
     return (
@@ -424,23 +430,30 @@ export default function App() {
     );
   }
 
+  const changeCount = Object.values(status).reduce((sum, entries) => sum + entries.length, 0);
+  const hasView = Boolean(fileView || diffView);
+
   return (
-    <div className="app-shell">
-      <header className="repo-header">
-        <div className="repo-title">
-          <span className="brand-mark" aria-hidden="true">
-            g
-          </span>
-          <div>
-            <p className="eyebrow">LOCAL REPOSITORY</p>
-            <h1>{repo?.name ?? "gitto"}</h1>
-          </div>
-        </div>
-        <div className="repo-actions">
-          <label className="branch-picker">
-            <span>ブランチ</span>
+    <main className="app-shell">
+      <div className="workspace">
+        <aside className="files-column" aria-label="ファイルツリー">
+          <div className="column-heading branch-heading">
+            <svg
+              className="ui-icon"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              aria-hidden="true"
+            >
+              <circle cx="6" cy="5" r="2" />
+              <circle cx="6" cy="19" r="2" />
+              <circle cx="18" cy="5" r="2" />
+              <path d="M6 7v10M18 7a9 9 0 0 1-9 9H6" />
+            </svg>
             <select
-              value={selectedBranchRevision}
+              aria-label="ブランチ"
+              value={selectedCommit ?? selectedBranchRevision}
               onChange={(event) => {
                 if (event.target.value === "HEAD") {
                   void chooseHead();
@@ -449,200 +462,259 @@ export default function App() {
                 const branch = repo?.branches.find((item) => item.revision === event.target.value);
                 if (branch) void chooseBranch(branch);
               }}
-              disabled={!repo?.branches.length || busy}
+              disabled={busy || (!repo?.branches.length && !repo?.head)}
             >
+              {selectedCommit && (
+                <option value={selectedCommit}>コミット {selectedCommit.slice(0, 8)}</option>
+              )}
               {showHeadOption && <option value="HEAD">HEAD</option>}
-              {repo?.branches.length ? (
-                repo.branches.map((branch) => (
-                  <option key={branch.revision} value={branch.revision}>
-                    {branch.name}
-                  </option>
-                ))
-              ) : (
-                <option>ブランチなし</option>
-              )}
+              {repo?.branches.length
+                ? repo.branches.map((branch) => (
+                    <option key={branch.revision} value={branch.revision}>
+                      {branch.name}
+                    </option>
+                  ))
+                : !showHeadOption && <option value="HEAD">ブランチなし</option>}
             </select>
-          </label>
-          <button className="refresh-button" onClick={() => void loadWorkspace()} disabled={busy}>
-            {busy ? "更新中…" : "更新"}
-          </button>
-        </div>
-      </header>
-
-      {error && (
-        <div className="inline-error" role="alert">
-          {error}
-        </div>
-      )}
-
-      <main className="workspace">
-        <aside className="history-column" aria-label="コミット履歴">
-          <div className="column-heading">
-            <h2>履歴</h2>
-            <span>{commits.length}</span>
           </div>
-          {commits.length === 0 ? (
-            <EmptyState title="コミットはありません" detail="HEADがまだ作成されていません。" />
-          ) : (
-            <div className="commit-list">
-              {commits.map((commit) => (
-                <button
-                  key={commit.id}
-                  className={`commit-row ${selectedCommit === commit.id ? "is-selected" : ""}`}
-                  onClick={() => void chooseCommit(commit)}
-                  disabled={busy}
-                >
-                  <span className="commit-line" aria-hidden="true" />
-                  <span className="commit-copy">
-                    <strong>{commit.summary || "（メッセージなし）"}</strong>
-                    <small>
-                      {commit.shortId} · {commit.author}
-                    </small>
-                  </span>
-                  <time dateTime={new Date(commit.time * 1000).toISOString()}>
-                    {formatDate(commit.time)}
-                  </time>
-                </button>
-              ))}
-              {hasMore && (
-                <button className="load-more" onClick={() => void loadMore()} disabled={busy}>
-                  もっと読む
-                </button>
-              )}
-            </div>
-          )}
-        </aside>
-
-        <aside className="changes-column" aria-label="変更されたファイル">
-          <div className="column-heading">
-            <h2>変更</h2>
-            <span>{Object.values(status).reduce((sum, entries) => sum + entries.length, 0)}</span>
+          <div className="pane-toolbar">
+            <h2>ファイル</h2>
+            <span>{sortedTree.length}</span>
           </div>
-          {repo?.bare ? (
-            <p className="change-empty bare-note">作業ツリーなし</p>
-          ) : (
-            changeGroups.map((group) => {
-              const entries = status[group.key];
+          <nav className="breadcrumbs" aria-label="パス">
+            <button onClick={() => void goToPath("")} disabled={busy}>
+              ルート
+            </button>
+            {breadcrumbs.map((part, index) => {
+              const path = breadcrumbs.slice(0, index + 1).join("/");
               return (
-                <section key={group.key} className="change-group">
-                  <h3>
-                    {group.label}
-                    <span>{entries.length}</span>
-                  </h3>
-                  {entries.length === 0 ? (
-                    <p className="change-empty">なし</p>
-                  ) : (
-                    entries.map((entry) => (
-                      <div className="change-row" key={`${group.key}-${entry.path}`}>
-                        <button
-                          className="change-diff-button"
-                          onClick={() => void openChange(group.source, entry)}
-                          disabled={busy}
-                          title={`${entry.path} の差分`}
-                        >
-                          <span className="status-dot" data-status={entry.status} />
-                          <span title={entry.path}>{entry.path}</span>
-                          <small>{statusLabel(entry.status)}</small>
-                        </button>
-                        <button
-                          className="change-content-button"
-                          onClick={() => void openWorkingFile(group.fileSource, entry)}
-                          disabled={busy || entry.status === "deleted"}
-                          title={
-                            entry.status === "deleted"
-                              ? "削除されたファイルの内容は表示できません"
-                              : `${entry.path} の内容`
-                          }
-                        >
-                          内容
-                        </button>
-                      </div>
-                    ))
-                  )}
-                </section>
+                <span key={path}>
+                  <i>/</i>
+                  <button onClick={() => void goToPath(path)} disabled={busy}>
+                    {part}
+                  </button>
+                </span>
               );
-            })
-          )}
-        </aside>
-
-        <section className="browser-panel" aria-label="リポジトリ内容">
-          <div className="browser-toolbar">
-            <nav className="breadcrumbs" aria-label="パス">
-              <button onClick={() => void goToPath("")} disabled={busy}>
-                ルート
-              </button>
-              {breadcrumbs.map((part, index) => {
-                const path = breadcrumbs.slice(0, index + 1).join("/");
-                return (
-                  <span key={path}>
-                    <i>/</i>
-                    <button onClick={() => void goToPath(path)} disabled={busy}>
-                      {part}
-                    </button>
-                  </span>
-                );
-              })}
-            </nav>
-            <span className="revision-label">{revisionLabel}</span>
+            })}
+          </nav>
+          <div className="pane-scroll tree-content">
+            {sortedTree.length === 0 ? (
+              <EmptyState
+                title="ファイルはありません"
+                detail="このリビジョンには表示できるファイルがありません。"
+              />
+            ) : (
+              <div className="tree-list">
+                {sortedTree.map((entry) => (
+                  <button
+                    className={fileView?.path === entry.path ? "tree-row is-selected" : "tree-row"}
+                    key={entry.path}
+                    onClick={() => void openEntry(entry)}
+                    disabled={busy}
+                    title={`${kindLabel(entry.kind)}: ${entry.path}`}
+                  >
+                    <EntryIcon kind={entry.kind} />
+                    <span>{entry.name}</span>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
-          <div className="browser-content">
-            <div className="tree-pane">
-              <div className="pane-title">
-                <h2>ファイル</h2>
-                <span>{currentPath || "/"}</span>
-              </div>
-              {sortedTree.length === 0 ? (
-                <EmptyState
-                  title="ファイルはありません"
-                  detail="このリビジョンには表示できるファイルがありません。"
-                />
-              ) : (
-                <div className="tree-list">
-                  {sortedTree.map((entry) => (
-                    <button
-                      className="tree-row"
-                      key={entry.path}
-                      onClick={() => void openEntry(entry)}
-                      disabled={busy}
-                      title={`${kindLabel(entry.kind)}: ${entry.path}`}
+        </aside>
+        <section className="viewer-column" aria-label="リポジトリ内容" aria-busy={busy}>
+          <div className="viewer-tabs">
+            {hasView && (
+              <div className="viewer-tab is-active">
+                {fileView && <EntryIcon kind="blob" />}
+                <h2 title={viewLabel}>{viewLabel.slice(viewLabel.lastIndexOf("/") + 1)}</h2>
+                {hasView && (
+                  <button
+                    className="icon-button close-button"
+                    aria-label="表示を閉じる"
+                    title="表示を閉じる"
+                    disabled={busy}
+                    onClick={() => {
+                      setFileView(null);
+                      setDiffView(null);
+                      setViewLabel("ファイルを選択してください");
+                    }}
+                  >
+                    <svg
+                      className="ui-icon"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.5"
+                      aria-hidden="true"
                     >
-                      <EntryIcon kind={entry.kind} />
-                      <span>{entry.name}</span>
-                      <small>
-                        {entry.kind === "blob" ? formatBytes(entry.size) : kindLabel(entry.kind)}
-                      </small>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-            <div className="viewer-pane">
-              <div className="pane-title">
-                <h2>{viewLabel}</h2>
-                {fileView && <span>{formatBytes(fileView.size)}</span>}
+                      <path d="m7 7 10 10M7 17 17 7" />
+                    </svg>
+                  </button>
+                )}
               </div>
-              {busy ? (
-                <div className="viewer-loading">読み込み中…</div>
-              ) : diffView ? (
-                <DiffViewer view={diffView} />
-              ) : fileView ? (
-                <FileViewer file={fileView} />
-              ) : (
-                <EmptyState
-                  title="閲覧する項目を選択"
-                  detail="左のファイルツリー、履歴、変更一覧から選択してください。"
-                />
-              )}
+            )}
+          </div>
+          {error && (
+            <div className="inline-error" role="alert">
+              {error}
             </div>
+          )}
+          <div className="pane-scroll viewer-content">
+            {busy ? (
+              <div className="viewer-loading">読み込み中…</div>
+            ) : diffView ? (
+              <DiffViewer view={diffView} />
+            ) : fileView ? (
+              <FileViewer file={fileView} />
+            ) : (
+              <EmptyState
+                title="ファイルを開く"
+                detail="左のツリーからファイルを選択してください。右の変更やコミットから差分も確認できます。"
+              />
+            )}
           </div>
         </section>
-      </main>
-      <footer className="app-footer">
-        <span>gitto</span>
-        <span>読み取り専用</span>
-        <span>{repo?.path}</span>
+        <aside
+          className="changes-column"
+          aria-label="変更されたファイル"
+          aria-busy={refreshingStatus}
+        >
+          <div className="column-heading">
+            <h2>変更</h2>
+            <div className="heading-actions">
+              <span>{changeCount}</span>
+              <button
+                className="icon-button"
+                onClick={() => void refreshStatus()}
+                disabled={busy || refreshingStatus}
+                aria-label="更新"
+                title={refreshingStatus ? "変更を更新中…" : "変更を更新"}
+              >
+                <svg
+                  className="ui-icon"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  aria-hidden="true"
+                >
+                  <path d="M20 7v5h-5M4 17v-5h5M6.1 6.1A8 8 0 0 1 20 12M4 12a8 8 0 0 0 13.9 5.9" />
+                </svg>
+              </button>
+            </div>
+          </div>
+          <div className="pane-scroll changes-list">
+            {repo?.bare ? (
+              <EmptyState title="作業ツリーなし" detail="コミット済みのファイルを閲覧できます。" />
+            ) : changeCount === 0 ? (
+              <EmptyState title="変更はありません" detail="作業ツリーはクリーンです。" />
+            ) : (
+              changeGroups
+                .filter((group) => status[group.key].length > 0)
+                .map((group) => {
+                  const entries = status[group.key];
+                  return (
+                    <section key={group.key} className="change-group">
+                      <h3>
+                        {group.label}
+                        <span>{entries.length}</span>
+                      </h3>
+                      {entries.map((entry) => (
+                        <div className="change-row" key={`${group.key}-${entry.path}`}>
+                          <button
+                            className="change-diff-button"
+                            onClick={() => void openChange(group.source, entry)}
+                            disabled={busy}
+                            title={`${entry.path} の差分`}
+                            aria-label={`${entry.path} の差分（${statusLabel(entry.status)}）`}
+                          >
+                            <span className="status-dot" data-status={entry.status} />
+                            <span className="change-name" title={entry.path}>
+                              <span>{entry.path.slice(entry.path.lastIndexOf("/") + 1)}</span>
+                              {entry.path.includes("/") && (
+                                <small>{entry.path.slice(0, entry.path.lastIndexOf("/"))}</small>
+                              )}
+                            </span>
+                            <small>{statusLabel(entry.status)}</small>
+                          </button>
+                          <button
+                            className="change-content-button"
+                            onClick={() => void openWorkingFile(group.fileSource, entry)}
+                            disabled={busy || entry.status === "deleted"}
+                            title={
+                              entry.status === "deleted"
+                                ? "削除されたファイルの内容は表示できません"
+                                : `${entry.path} の内容`
+                            }
+                          >
+                            内容
+                          </button>
+                        </div>
+                      ))}
+                    </section>
+                  );
+                })
+            )}
+          </div>
+        </aside>
+
+        <aside className="history-column" aria-label="コミット履歴">
+          <div className="column-heading">
+            <h2>コミット</h2>
+            <span>{commits.length}</span>
+          </div>
+          <div className="pane-scroll history-content">
+            {commits.length === 0 ? (
+              <EmptyState title="コミットはありません" detail="HEADがまだ作成されていません。" />
+            ) : (
+              <div className="commit-list">
+                {commits.map((commit) => (
+                  <button
+                    key={commit.id}
+                    className={`commit-row ${selectedCommit === commit.id ? "is-selected" : ""}`}
+                    onClick={() => void chooseCommit(commit)}
+                    disabled={busy}
+                    title={commit.message}
+                    aria-pressed={selectedCommit === commit.id}
+                  >
+                    <span className="commit-line" aria-hidden="true" />
+                    <span className="commit-copy">
+                      <strong>{commit.summary || "（メッセージなし）"}</strong>
+                      <small>
+                        {commit.shortId} · {commit.author}
+                      </small>
+                    </span>
+                    <time dateTime={new Date(commit.time * 1000).toISOString()}>
+                      {formatDate(commit.time)}
+                    </time>
+                  </button>
+                ))}
+                {hasMore && (
+                  <button className="load-more" onClick={() => void loadMore()} disabled={busy}>
+                    もっと読む
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        </aside>
+      </div>
+      <footer className="repo-footer" aria-label="リポジトリのパス">
+        <span className="repo-path" title={repo?.path}>
+          {repo?.path}
+        </span>
+        <span className="footer-meta">
+          {fileView && <span>{formatBytes(fileView.size)}</span>}
+          <span title={selectedCommit ?? commits[0]?.id}>
+            {selectedCommit
+              ? `コミット ${selectedCommit.slice(0, 8)}`
+              : revision === "HEAD"
+                ? `HEAD${commits[0] ? ` · ${commits[0].shortId}` : "（未作成）"}`
+                : commits[0]?.shortId}
+          </span>
+        </span>
       </footer>
-    </div>
+    </main>
   );
 }
 

@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import App from "./app";
@@ -102,14 +102,129 @@ function installFetch(
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  document.title = "gitto";
 });
 
 describe("App", () => {
+  it("uses the repository name in the page title", async () => {
+    installFetch();
+    render(<App />);
+
+    await waitFor(() => expect(document.title).toBe("sample-repo | gitto"));
+  });
+
+  it("places files, content, changes, and history in the requested reading order", async () => {
+    installFetch();
+    render(<App />);
+
+    const files = await screen.findByRole("complementary", { name: "ファイルツリー" });
+    expect(within(files).getByLabelText("ブランチ")).toHaveValue("refs/heads/main");
+    expect(screen.getAllByText("main")).toHaveLength(1);
+    const content = screen.getByRole("region", { name: "リポジトリ内容" });
+    expect(within(content).queryByRole("heading")).not.toBeInTheDocument();
+    const changes = screen.getByRole("complementary", { name: "変更されたファイル" });
+    const history = screen.getByRole("complementary", { name: "コミット履歴" });
+    const footer = screen.getByLabelText("リポジトリのパス");
+    expect(within(footer).getByText("HEAD · abc1234")).toBeInTheDocument();
+    for (const [left, right] of [
+      [files, content],
+      [content, changes],
+      [changes, history],
+      [history, footer],
+    ]) {
+      expect(left.compareDocumentPosition(right) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    }
+  });
+
+  it("closes the current file without changing the repository navigation", async () => {
+    installFetch();
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: /README\.md/ }));
+    expect(await screen.findByText("# gitto")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "表示を閉じる" }));
+
+    expect(screen.queryByText("# gitto")).not.toBeInTheDocument();
+    expect(screen.getByText("ファイルを開く")).toBeInTheDocument();
+    expect(screen.getByLabelText("ブランチ")).toHaveValue("refs/heads/main");
+    expect(screen.getByRole("button", { name: /README\.md/ })).toBeInTheDocument();
+  });
+
+  it("refreshes only changes while keeping the open file", async () => {
+    const fetchMock = installFetch();
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: /最初のコミット/ }));
+    await waitFor(() => expect(document.querySelector(".patch-view")).toBeInTheDocument());
+    await user.click(await screen.findByRole("button", { name: /README\.md/ }));
+    expect(await screen.findByText("# gitto")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "更新" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "更新" })).toBeEnabled());
+
+    expect(screen.getByText("# gitto")).toBeInTheDocument();
+    expect(screen.getByLabelText("ブランチ")).toHaveValue("abc123456789");
+    expect(
+      within(screen.getByLabelText("リポジトリのパス")).getByText("コミット abc12345"),
+    ).toBeInTheDocument();
+    expect(fetchMock.mock.calls.filter(([url]) => url === "/api/status")).toHaveLength(2);
+    expect(fetchMock.mock.calls.filter(([url]) => url === "/api/repo")).toHaveLength(1);
+    expect(
+      fetchMock.mock.calls.filter(
+        ([url]) => typeof url === "string" && url.startsWith("/api/tree"),
+      ),
+    ).toHaveLength(2);
+    expect(
+      fetchMock.mock.calls.filter(
+        ([url]) => typeof url === "string" && url.startsWith("/api/commits"),
+      ),
+    ).toHaveLength(1);
+  });
+
+  it("keeps the preview visible when refreshing changes fails", async () => {
+    const fetchMock = installFetch();
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: /README\.md/ }));
+    expect(await screen.findByText("# gitto")).toBeInTheDocument();
+    fetchMock.mockImplementationOnce(() => response({ error: "status unavailable" }, 500));
+    await user.click(screen.getByRole("button", { name: "更新" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("status unavailable");
+    expect(screen.getByText("# gitto")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "更新" })).toBeEnabled();
+  });
+
+  it("shows parent directories for changed files with the same name", async () => {
+    installFetch({
+      statusData: {
+        ...status,
+        staged: [
+          { path: "src/index.ts", oldPath: null, status: "modified" },
+          { path: "lib/index.ts", oldPath: null, status: "modified" },
+        ],
+      },
+    });
+    render(<App />);
+
+    const changes = await screen.findByRole("complementary", { name: "変更されたファイル" });
+    expect(within(changes).getByText("src")).toBeInTheDocument();
+    expect(within(changes).getByText("lib")).toBeInTheDocument();
+    expect(
+      within(changes).getByRole("button", { name: "src/index.ts の差分（変更）" }),
+    ).toBeInTheDocument();
+    expect(
+      within(changes).getByRole("button", { name: "lib/index.ts の差分（変更）" }),
+    ).toBeInTheDocument();
+  });
+
   it("uses HEAD for the initial view and selects the matching full branch ref", async () => {
     const fetchMock = installFetch();
     render(<App />);
 
-    await screen.findByRole("heading", { name: "sample-repo" });
+    await screen.findByRole("complementary", { name: "ファイルツリー" });
 
     expect(fetchMock).toHaveBeenCalledWith("/api/commits?revision=HEAD&offset=0&limit=50");
     expect(fetchMock).toHaveBeenCalledWith("/api/tree?revision=HEAD&path=");
@@ -126,7 +241,7 @@ describe("App", () => {
     });
     render(<App />);
 
-    await screen.findByRole("heading", { name: "sample-repo" });
+    await screen.findByRole("complementary", { name: "ファイルツリー" });
 
     expect(screen.getByRole("option", { name: "HEAD" })).toBeInTheDocument();
     expect(screen.getByLabelText("ブランチ")).toHaveValue("HEAD");
@@ -136,10 +251,12 @@ describe("App", () => {
     installFetch();
     render(<App />);
 
-    expect(await screen.findByRole("heading", { name: "sample-repo" })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("complementary", { name: "ファイルツリー" }),
+    ).toBeInTheDocument();
     expect(screen.getByText("最初のコミット")).toBeInTheDocument();
     expect(screen.getByText("README.md")).toBeInTheDocument();
-    expect(screen.getByText("src/main.ts")).toBeInTheDocument();
+    expect(screen.getByTitle("src/main.ts")).toBeInTheDocument();
   });
 
   it("opens a file and a commit diff when the user selects them", async () => {
@@ -154,7 +271,24 @@ describe("App", () => {
     await waitFor(() =>
       expect(document.querySelector(".patch-view")).toHaveTextContent("@@ -1 +1 @@"),
     );
-    expect(screen.getByText(/コミット abc12345/)).toBeInTheDocument();
+    expect(
+      within(screen.getByLabelText("リポジトリのパス")).getByText("コミット abc12345"),
+    ).toBeInTheDocument();
+  });
+
+  it("returns from a historical commit to the branch tip", async () => {
+    const fetchMock = installFetch();
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: /最初のコミット/ }));
+    await waitFor(() => expect(document.querySelector(".patch-view")).toBeInTheDocument());
+    expect(screen.getByLabelText("ブランチ")).toHaveValue("abc123456789");
+    await user.selectOptions(screen.getByLabelText("ブランチ"), "refs/heads/main");
+
+    await waitFor(() => expect(document.querySelector(".patch-view")).not.toBeInTheDocument());
+    expect(screen.getByLabelText("ブランチ")).toHaveValue("refs/heads/main");
+    expect(fetchMock).toHaveBeenCalledWith("/api/tree?revision=refs%2Fheads%2Fmain&path=");
   });
 
   it("reads staged file contents from the index", async () => {
