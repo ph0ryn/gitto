@@ -99,6 +99,8 @@ pub struct DiffQuery {
     #[serde(default = "head")]
     pub revision: String,
     pub path: Option<String>,
+    #[serde(default, rename = "statsOnly")]
+    pub stats_only: bool,
 }
 
 fn head() -> String {
@@ -195,6 +197,7 @@ mod tests {
             "/file",
             "/commits?limit=invalid",
             "/diff?source=invalid",
+            "/diff?source=staged&statsOnly=invalid",
         ] {
             let response = app
                 .clone()

@@ -311,7 +311,11 @@ fn binary_content(bytes: &[u8]) -> bool {
 }
 
 fn content(path: String, bytes: &[u8], size: u64) -> FileContent {
-    if size > MAX_CONTENT as u64 {
+    content_with_limit(path, bytes, size, true)
+}
+
+fn content_with_limit(path: String, bytes: &[u8], size: u64, limited: bool) -> FileContent {
+    if limited && size > MAX_CONTENT as u64 {
         return FileContent {
             path,
             kind: "tooLarge",
@@ -338,7 +342,7 @@ fn content(path: String, bytes: &[u8], size: u64) -> FileContent {
 pub fn file(repo: &Repository, query: FileQuery) -> Result<FileContent, Error> {
     let path = validate_path(&query.path, false)?;
     let (oid, mode) = match query.source {
-        FileSource::Worktree => return worktree_file(repo, &query.path),
+        FileSource::Worktree => return worktree_file(repo, &query.path, true),
         FileSource::Index => {
             let index = repo.index()?;
             let entry = index.get_path(path, 0).ok_or_else(|| {
@@ -369,7 +373,7 @@ pub fn file(repo: &Repository, query: FileQuery) -> Result<FileContent, Error> {
     Ok(content(query.path, blob.content(), blob.size() as u64))
 }
 
-fn worktree_file(repo: &Repository, path: &str) -> Result<FileContent, Error> {
+fn worktree_file(repo: &Repository, path: &str, limited: bool) -> Result<FileContent, Error> {
     let root = repo.workdir().ok_or(Error::NoWorktree)?.canonicalize()?;
     let index = repo.index()?;
     for stage in 0..=3 {
@@ -398,19 +402,33 @@ fn worktree_file(repo: &Repository, path: &str) -> Result<FileContent, Error> {
     if metadata.file_type().is_symlink() {
         let target = fs::read_link(&full)?;
         let bytes = path_text(&target)?.as_bytes();
-        return Ok(content(path.to_owned(), bytes, bytes.len() as u64));
+        return Ok(content_with_limit(
+            path.to_owned(),
+            bytes,
+            bytes.len() as u64,
+            limited,
+        ));
     }
     if !metadata.is_file() {
         return Err(Error::Invalid("Expected a regular file or symlink".into()));
     }
-    if metadata.len() > MAX_CONTENT as u64 {
+    if limited && metadata.len() > MAX_CONTENT as u64 {
         return Ok(content(path.to_owned(), &[], metadata.len()));
     }
     let mut bytes = Vec::new();
     fs::File::open(full)?
-        .take(MAX_CONTENT as u64 + 1)
+        .take(if limited {
+            MAX_CONTENT as u64 + 1
+        } else {
+            u64::MAX
+        })
         .read_to_end(&mut bytes)?;
-    Ok(content(path.to_owned(), &bytes, bytes.len() as u64))
+    Ok(content_with_limit(
+        path.to_owned(),
+        &bytes,
+        bytes.len() as u64,
+        limited,
+    ))
 }
 
 pub fn status_name(status: Status, staged: bool, intent_to_add: bool) -> Option<&'static str> {
@@ -568,7 +586,11 @@ pub fn diff(repo: &Repository, query: DiffQuery) -> Result<DiffResult, Error> {
     let mut options = DiffOptions::new();
     options
         .include_typechange(true)
-        .max_size(MAX_CONTENT as i64);
+        .max_size(if query.stats_only {
+            -1
+        } else {
+            MAX_CONTENT as i64
+        });
     if let Some(path) = &query.path {
         validate_path(path, false)?;
     }
@@ -688,17 +710,15 @@ pub fn diff(repo: &Repository, query: DiffQuery) -> Result<DiffResult, Error> {
             }
             None => (0, 0),
         };
-        result.files.push(DiffFile {
+        let file = DiffFile {
             path: entry.path,
             old_path: entry.old_path,
             status: entry.status,
             additions,
             deletions,
             binary: delta.flags().contains(git2::DiffFlags::BINARY),
-        });
-        if let Some(patch) = &mut patch {
-            append_patch(&mut result, patch)?;
-        }
+        };
+        append_file(&mut result, file, patch.as_mut(), query.stats_only)?;
         if result.truncated {
             break;
         }
@@ -707,7 +727,13 @@ pub fn diff(repo: &Repository, query: DiffQuery) -> Result<DiffResult, Error> {
         && !result.truncated
         && let Some(index) = &index
     {
-        append_conflicts(repo, index, query.path.as_deref(), &mut result)?;
+        append_conflicts(
+            repo,
+            index,
+            query.path.as_deref(),
+            &mut result,
+            query.stats_only,
+        )?;
     }
     Ok(result)
 }
@@ -719,6 +745,19 @@ fn conflict_entry(conflict: &git2::IndexConflict) -> Result<&git2::IndexEntry, E
         .or(conflict.their.as_ref())
         .or(conflict.ancestor.as_ref())
         .ok_or_else(|| Error::Unsupported("Conflict has no index entries".into()))
+}
+
+fn append_file(
+    result: &mut DiffResult,
+    file: DiffFile,
+    patch: Option<&mut git2::Patch<'_>>,
+    stats_only: bool,
+) -> Result<(), Error> {
+    result.files.push(file);
+    if !stats_only && let Some(patch) = patch {
+        append_patch(result, patch)?;
+    }
+    Ok(())
 }
 
 fn append_patch(result: &mut DiffResult, patch: &mut git2::Patch<'_>) -> Result<(), Error> {
@@ -769,6 +808,7 @@ fn append_conflicts(
     index: &git2::Index,
     path: Option<&str>,
     result: &mut DiffResult,
+    stats_only: bool,
 ) -> Result<(), Error> {
     for conflict in index.conflicts()? {
         let conflict = conflict?;
@@ -800,7 +840,7 @@ fn append_conflicts(
         let old = match conflict.our.as_ref() {
             Some(entry) => {
                 let size = repo.odb()?.read_header(entry.id)?.0;
-                if size > MAX_CONTENT {
+                if !stats_only && size > MAX_CONTENT {
                     file.binary = true;
                     result.files.push(file);
                     continue;
@@ -809,7 +849,7 @@ fn append_conflicts(
             }
             None => None,
         };
-        let new = match worktree_file(repo, conflict_path) {
+        let new = match worktree_file(repo, conflict_path, !stats_only) {
             Ok(file) => file,
             Err(Error::Io(error)) if error.kind() == std::io::ErrorKind::NotFound => {
                 content(conflict_path.into(), &[], 0)
@@ -828,18 +868,19 @@ fn append_conflicts(
             .as_deref()
             .ok_or_else(|| Error::Unsupported("Text content is missing".into()))?
             .as_bytes();
+        let mut options = DiffOptions::new();
+        options.max_size(if stats_only { -1 } else { MAX_CONTENT as i64 });
         let mut patch = git2::Patch::from_buffers(
             old_bytes,
             Some(Path::new(conflict_path)),
             new_bytes,
             Some(Path::new(conflict_path)),
-            None,
+            Some(&mut options),
         )?;
         let (_, additions, deletions) = patch.line_stats()?;
         file.additions = additions;
         file.deletions = deletions;
-        result.files.push(file);
-        append_patch(result, &mut patch)?;
+        append_file(result, file, Some(&mut patch), stats_only)?;
         if result.truncated {
             break;
         }
@@ -850,6 +891,37 @@ fn append_conflicts(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn statistics_only_keep_file_counts_without_serializing_the_patch() {
+        let mut result = DiffResult {
+            patch: String::new(),
+            files: Vec::new(),
+            truncated: false,
+        };
+        let mut patch = git2::Patch::from_buffers(
+            b"old\n",
+            Some(Path::new("file")),
+            b"new\n",
+            Some(Path::new("file")),
+            None,
+        )
+        .unwrap();
+        let file = DiffFile {
+            path: "file".into(),
+            old_path: None,
+            status: "modified",
+            additions: 1,
+            deletions: 1,
+            binary: false,
+        };
+        append_file(&mut result, file, Some(&mut patch), true).unwrap();
+        assert_eq!(result.files.len(), 1);
+        assert_eq!(result.files[0].additions, 1);
+        assert_eq!(result.files[0].deletions, 1);
+        assert!(result.patch.is_empty());
+        assert!(!result.truncated);
+    }
 
     #[test]
     fn repository_paths_allow_unicode_and_reject_traversal_and_metadata() {
@@ -917,6 +989,20 @@ mod tests {
         let large = content("large".into(), &[], MAX_CONTENT as u64 + 1);
         assert_eq!(large.kind, "tooLarge");
         assert!(large.content.is_none());
+    }
+
+    #[test]
+    fn statistics_content_keeps_large_text_while_preview_remains_limited() {
+        let bytes = vec![b'x'; MAX_CONTENT + 1];
+        let size = bytes.len() as u64;
+        assert_eq!(content("large".into(), &bytes, size).kind, "tooLarge");
+        let text = content_with_limit("large".into(), &bytes, size, false);
+        assert_eq!(text.kind, "text");
+        assert_eq!(text.content.unwrap().len(), bytes.len());
+        assert_eq!(
+            content_with_limit("binary".into(), b"a\0b", 3, false).kind,
+            "binary"
+        );
     }
 
     #[test]
