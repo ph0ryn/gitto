@@ -56,6 +56,7 @@ function installFetch(
     repoData?: typeof repo;
     statusData?: TestStatus;
     diffData?: unknown;
+    commitStats?: unknown;
     diffPromise?: Promise<unknown>;
     trees?: Record<string, typeof tree.entries>;
     stats?: Record<string, { additions: number; deletions: number; binary?: boolean }>;
@@ -102,6 +103,7 @@ function installFetch(
         const query = new URL(url, "http://localhost").searchParams;
         if (query.get("statsOnly") === "true") {
           const source = query.get("source");
+          if (source === "commit") return response(options.commitStats ?? diffData);
           const entries =
             source === "staged"
               ? statusData.staged
@@ -485,17 +487,15 @@ describe("App", () => {
     const user = userEvent.setup();
     render(<App />);
 
-    await user.click(await screen.findByRole("button", { name: /最初のコミット/ }));
-    await waitFor(() => expect(document.querySelector(".patch-view")).toBeInTheDocument());
     await user.click(await screen.findByRole("button", { name: /README\.md/ }));
     expect(await screen.findByText("# gitto")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Refresh" }));
     await waitFor(() => expect(screen.getByRole("button", { name: "Refresh" })).toBeEnabled());
 
     expect(screen.getByText("# gitto")).toBeInTheDocument();
-    expect(screen.getByLabelText("Branch")).toHaveValue("abc123456789");
+    expect(screen.getByLabelText("Branch")).toHaveValue("refs/heads/main");
     expect(
-      within(screen.getByLabelText("Repository path")).getByText("Commit abc12345"),
+      within(screen.getByLabelText("Repository path")).getByText("HEAD · abc1234"),
     ).toBeInTheDocument();
     expect(fetchMock.mock.calls.filter(([url]) => url === "/api/status")).toHaveLength(2);
     expect(fetchMock.mock.calls.filter(([url]) => url === "/api/repo")).toHaveLength(1);
@@ -503,7 +503,7 @@ describe("App", () => {
       fetchMock.mock.calls.filter(
         ([url]) => typeof url === "string" && url.startsWith("/api/tree"),
       ),
-    ).toHaveLength(2);
+    ).toHaveLength(1);
     expect(
       fetchMock.mock.calls.filter(
         ([url]) => typeof url === "string" && url.startsWith("/api/commits"),
@@ -616,6 +616,103 @@ describe("App", () => {
     await waitFor(() => expect(document.querySelector(".patch-view")).not.toBeInTheDocument());
     expect(screen.getByLabelText("Branch")).toHaveValue("refs/heads/main");
     expect(fetchMock).toHaveBeenCalledWith("/api/tree?revision=refs%2Fheads%2Fmain&path=");
+  });
+
+  it("keeps complete commit changes while viewing individual files and restores local changes at the branch tip", async () => {
+    const commitFiles = [
+      {
+        path: "history/new.ts",
+        oldPath: "history/old.ts",
+        status: "renamed",
+        additions: 9,
+        deletions: 2,
+        binary: false,
+      },
+      {
+        path: "history/deleted.ts",
+        oldPath: null,
+        status: "deleted",
+        additions: 0,
+        deletions: 7,
+        binary: false,
+      },
+    ];
+    const fetchMock = installFetch({
+      statusData: {
+        ...status,
+        untracked: [{ path: "local.md", oldPath: null, status: "untracked" }],
+      },
+      diffData: { patch: "@@ -1 +1 @@\n-old\n+new", files: [], truncated: true },
+      commitStats: { patch: "", files: commitFiles, truncated: false },
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    const changes = await screen.findByRole("complementary", { name: "Changed files" });
+    await user.click(screen.getByRole("button", { name: /最初のコミット/ }));
+
+    const renamed = await within(changes).findByRole("button", {
+      name: "history/new.ts diff (Commit · renamed)",
+    });
+    expect(
+      within(changes).getByRole("button", {
+        name: "history/deleted.ts diff (Commit · deleted)",
+      }),
+    ).toHaveAttribute("data-change", "deleted");
+    expect(within(renamed).getByText("+ 9")).toBeInTheDocument();
+    expect(within(renamed).getByText("− 2")).toBeInTheDocument();
+    expect(within(changes).getByText("2")).toBeInTheDocument();
+    expect(within(changes).queryByText("main.ts")).not.toBeInTheDocument();
+    expect(within(changes).queryByText("Untracked")).not.toBeInTheDocument();
+    expect(within(changes).queryByRole("button", { name: "Refresh" })).not.toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/diff?source=commit&revision=abc123456789&statsOnly=true",
+    );
+
+    await user.click(renamed);
+    await waitFor(() => expect(renamed).toHaveAttribute("aria-pressed", "true"));
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/diff?source=commit&revision=abc123456789&path=history%2Fnew.ts",
+    );
+    await user.click(screen.getByRole("button", { name: "README.md" }));
+    expect(await screen.findByText("# gitto")).toBeInTheDocument();
+    expect(renamed).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Close view" }));
+    expect(renamed).toBeVisible();
+    await user.selectOptions(screen.getByLabelText("Branch"), "refs/heads/main");
+    expect(
+      await within(changes).findByRole("button", {
+        name: "src/main.ts diff (Staged · modified)",
+      }),
+    ).toBeVisible();
+    expect(within(changes).getByText("Untracked")).toBeInTheDocument();
+    expect(within(changes).queryByText("new.ts")).not.toBeInTheDocument();
+    expect(within(changes).getByRole("button", { name: "Refresh" })).toBeEnabled();
+  });
+
+  it("shows historical changes in a bare repository", async () => {
+    installFetch({ repoData: { ...repo, bare: true } });
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(await screen.findByRole("button", { name: /最初のコミット/ }));
+
+    const changes = screen.getByRole("complementary", { name: "Changed files" });
+    expect(
+      await within(changes).findByRole("button", {
+        name: "README.md diff (Commit · modified)",
+      }),
+    ).toBeVisible();
+    expect(within(changes).queryByText("No working tree")).not.toBeInTheDocument();
+  });
+
+  it("shows an empty commit without reporting the working tree as clean", async () => {
+    installFetch({ diffData: { patch: "", files: [], truncated: false } });
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(await screen.findByRole("button", { name: /最初のコミット/ }));
+
+    const changes = screen.getByRole("complementary", { name: "Changed files" });
+    expect(await within(changes).findByText("This commit has no file changes.")).toBeVisible();
+    expect(within(changes).queryByText("main.ts")).not.toBeInTheDocument();
   });
 
   it("opens staged changes as a diff", async () => {

@@ -126,6 +126,7 @@ export default function App() {
   const [revision, setRevision] = useState("HEAD");
   const [selectedBranchRevision, setSelectedBranchRevision] = useState("");
   const [selectedCommit, setSelectedCommit] = useState<string | null>(null);
+  const [commitChanges, setCommitChanges] = useState<ChangeEntry[]>([]);
   const [selectedChange, setSelectedChange] = useState<string | null>(null);
   const [fileView, setFileView] = useState<FileView | null>(null);
   const [diffView, setDiffView] = useState<DiffView | null>(null);
@@ -161,6 +162,7 @@ export default function App() {
         repoData.branches.find((branch) => branch.name === repoData.head)?.revision ?? "HEAD",
       );
       setSelectedCommit(null);
+      setCommitChanges([]);
       setSelectedChange(null);
       setFileView(null);
       setDiffView(null);
@@ -193,10 +195,18 @@ export default function App() {
         api<{ entries: TreeEntry[] }>(`/api/tree?revision=${encodeURIComponent(commit.id)}&path=`),
         api<DiffView>(`/api/diff?source=commit&revision=${encodeURIComponent(commit.id)}`),
       ]);
+      const changesData = diffData.truncated
+        ? await api<DiffView>(
+            `/api/diff?source=commit&revision=${encodeURIComponent(commit.id)}&statsOnly=true`,
+          )
+        : diffData;
       setTree(treeData.entries);
       setDiffView(diffData);
       setRevision(commit.id);
       setSelectedCommit(commit.id);
+      setCommitChanges(
+        changesData.files.map((file) => ({ ...file, source: "commit", stats: file })),
+      );
       setViewLabel(`${commit.shortId} changes`);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Could not load the commit.");
@@ -229,6 +239,7 @@ export default function App() {
       setRevision(branch.revision);
       setSelectedBranchRevision(branch.revision);
       setSelectedCommit(null);
+      setCommitChanges([]);
       setFileView(null);
       setDiffView(null);
       setViewLabel("Select a file");
@@ -260,6 +271,7 @@ export default function App() {
       setRevision("HEAD");
       setSelectedBranchRevision("HEAD");
       setSelectedCommit(null);
+      setCommitChanges([]);
       setViewLabel("Select a file");
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Could not load HEAD.");
@@ -356,17 +368,20 @@ export default function App() {
       ...entry,
       source: "untracked",
     }));
-    return [
-      { label: "Tracked", entries: tracked },
-      { label: "Untracked", entries: untracked },
-    ]
+    const groups = selectedCommit
+      ? [{ label: "Commit", entries: commitChanges }]
+      : [
+          { label: "Tracked", entries: tracked },
+          { label: "Untracked", entries: untracked },
+        ];
+    return groups
       .filter((group) => group.entries.length > 0)
       .map((group) => ({
         label: group.label,
         nodes: buildChangeTree(group.entries),
         decorations: buildChangeDecorations(group.entries),
       }));
-  }, [status]);
+  }, [status, selectedCommit, commitChanges]);
   const fileDecorations = useMemo(
     () => buildChangeDecorations(Object.values(status).flat()),
     [status],
@@ -403,7 +418,9 @@ export default function App() {
     );
   }
 
-  const changeCount = Object.values(status).reduce((sum, entries) => sum + entries.length, 0);
+  const changeCount = selectedCommit
+    ? commitChanges.length
+    : Object.values(status).reduce((sum, entries) => sum + entries.length, 0);
   const hasView = Boolean(fileView || diffView);
 
   return (
@@ -530,39 +547,50 @@ export default function App() {
             )}
           </div>
         </section>
-        <aside className="changes-column" aria-label="Changed files" aria-busy={refreshingStatus}>
+        <aside
+          className="changes-column"
+          aria-label="Changed files"
+          aria-busy={busy || refreshingStatus}
+        >
           <div className="column-heading">
             <h2>Changes</h2>
             <div className="heading-actions">
               <span>{changeCount}</span>
-              <button
-                className="icon-button"
-                onClick={() => void refreshStatus()}
-                disabled={busy || refreshingStatus}
-                aria-label="Refresh"
-                title={refreshingStatus ? "Refreshing changes…" : "Refresh changes"}
-              >
-                <svg
-                  className="ui-icon"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.5"
-                  aria-hidden="true"
+              {!selectedCommit && (
+                <button
+                  className="icon-button"
+                  onClick={() => void refreshStatus()}
+                  disabled={busy || refreshingStatus}
+                  aria-label="Refresh"
+                  title={refreshingStatus ? "Refreshing changes…" : "Refresh changes"}
                 >
-                  <path d="M20 7v5h-5M4 17v-5h5M6.1 6.1A8 8 0 0 1 20 12M4 12a8 8 0 0 0 13.9 5.9" />
-                </svg>
-              </button>
+                  <svg
+                    className="ui-icon"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                    aria-hidden="true"
+                  >
+                    <path d="M20 7v5h-5M4 17v-5h5M6.1 6.1A8 8 0 0 1 20 12M4 12a8 8 0 0 0 13.9 5.9" />
+                  </svg>
+                </button>
+              )}
             </div>
           </div>
           <div className="pane-scroll changes-list">
-            {repo?.bare ? (
+            {repo?.bare && !selectedCommit ? (
               <EmptyState
                 title="No working tree"
                 detail="Committed files are available to browse."
               />
             ) : changeCount === 0 ? (
-              <EmptyState title="No changes" detail="The working tree is clean." />
+              <EmptyState
+                title="No changes"
+                detail={
+                  selectedCommit ? "This commit has no file changes." : "The working tree is clean."
+                }
+              />
             ) : (
               changeGroups.map((group) => (
                 <details key={group.label} className="change-group" open>

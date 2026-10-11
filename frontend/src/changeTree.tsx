@@ -4,7 +4,7 @@ export type ChangeEntry = {
   path: string;
   oldPath: string | null;
   status: string;
-  source: "staged" | "unstaged" | "untracked";
+  source: "staged" | "unstaged" | "untracked" | "commit";
   stats?: { additions: number; deletions: number; binary: boolean };
 };
 
@@ -23,7 +23,9 @@ export function changeLabel(entry: ChangeEntry) {
       ? "Staged"
       : entry.source === "unstaged"
         ? "Unstaged"
-        : "Untracked";
+        : entry.source === "commit"
+          ? "Commit"
+          : "Untracked";
 }
 
 export function buildChangeTree(entries: ChangeEntry[]): ChangeNode[] {
