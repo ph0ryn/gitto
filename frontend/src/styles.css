@@ -130,7 +130,6 @@ h2 {
   font-weight: 600;
 }
 .column-heading > span,
-.heading-actions > span,
 .change-group > summary span {
   color: var(--muted);
   font-size: 11px;
@@ -185,8 +184,7 @@ h2 {
   font-weight: 600;
 }
 .pane-toolbar > span,
-.column-heading > span,
-.heading-actions > span {
+.column-heading > span {
   min-width: 22px;
   padding: 1px 5px;
   border-radius: 4px;
@@ -442,11 +440,6 @@ summary.tree-row::-webkit-details-marker {
 .icon-button:hover:not(:disabled) {
   background: var(--hover);
   color: var(--ink);
-}
-.heading-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
 }
 .viewer-content {
   background: var(--surface);

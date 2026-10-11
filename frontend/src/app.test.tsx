@@ -660,6 +660,7 @@ describe("App", () => {
   });
 
   it("refreshes untracked files inside an expanded folder without collapsing it", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     const statusData: TestStatus = { ...status, untracked: [] };
     const fetchMock = installFetch({
       statusData,
@@ -668,29 +669,38 @@ describe("App", () => {
         src: [{ name: "main.ts", path: "src/main.ts", kind: "blob", size: 12 }],
       },
     });
-    const user = userEvent.setup();
-    render(<App />);
-    const files = await screen.findByRole("complementary", { name: "File tree" });
+    await act(async () => {
+      render(<App />);
+    });
+    const files = screen.getByRole("complementary", { name: "File tree" });
     const folder = within(files).getByRole("button", { name: "src" });
-    await user.click(folder);
-    await within(files).findByRole("button", { name: "main.ts" });
+    await act(async () => {
+      fireEvent.click(folder);
+    });
+    expect(within(files).getByRole("button", { name: "main.ts" })).toBeVisible();
     statusData.untracked = [{ path: "src/new.ts", oldPath: null, status: "untracked" }];
-    await user.click(screen.getByRole("button", { name: "Refresh" }));
-    expect(await within(files).findByRole("button", { name: "new.ts" })).toBeVisible();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000);
+    });
+    expect(within(files).getByRole("button", { name: "new.ts" })).toBeVisible();
     expect(folder).toHaveAttribute("aria-expanded", "true");
     expect(
       fetchMock.mock.calls.filter(([url]) => url === "/api/tree?revision=HEAD&path=src"),
-    ).toHaveLength(1);
+    ).toHaveLength(2);
     statusData.staged = [
       ...statusData.staged,
       { path: "src/new.ts", oldPath: null, status: "added" },
     ];
     statusData.untracked = [];
-    await user.click(screen.getByRole("button", { name: "Refresh" }));
-    const added = await within(files).findByRole("button", { name: "new.ts" });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000);
+    });
+    const added = within(files).getByRole("button", { name: "new.ts" });
     expect(added).toHaveAttribute("data-change", "added");
-    await user.click(added);
-    await screen.findByText("# gitto");
+    await act(async () => {
+      fireEvent.click(added);
+    });
+    expect(screen.getByText("# gitto")).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/file?source=worktree&revision=HEAD&path=src%2Fnew.ts",
     );
@@ -886,16 +896,28 @@ describe("App", () => {
   });
 
   it("keeps the preview when refreshed diff statistics fail", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     const fetchMock = installFetch();
-    const user = userEvent.setup();
-    render(<App />);
-    await user.click(await screen.findByRole("button", { name: "README.md" }));
-    fetchMock.mockImplementationOnce(() => response(status));
-    fetchMock.mockImplementationOnce(() => response({ error: "Statistics unavailable" }, 500));
-    await user.click(screen.getByRole("button", { name: "Refresh" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent("Statistics unavailable");
+    await act(async () => {
+      render(<App />);
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "README.md" }));
+    });
+    const originalFetch = fetchMock.getMockImplementation()!;
+    fetchMock.mockImplementation((input, init) => {
+      const url =
+        typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+      if (url === "/api/diff?source=staged&statsOnly=true") {
+        return response({ error: "Statistics unavailable" }, 500);
+      }
+      return originalFetch(input, init);
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000);
+    });
+    expect(screen.getByRole("alert")).toHaveTextContent("Statistics unavailable");
     expect(screen.getByText("# gitto")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Refresh" })).toBeEnabled();
   });
 
   it("uses the repository name in the page title and file tree heading", async () => {
@@ -965,50 +987,6 @@ describe("App", () => {
     expect(screen.getByText("Open a file")).toBeInTheDocument();
     expect(screen.getByLabelText("Branch")).toHaveValue("refs/heads/main");
     expect(screen.getByRole("button", { name: /README\.md/ })).toBeInTheDocument();
-  });
-
-  it("refreshes only changes while keeping the open file", async () => {
-    const fetchMock = installFetch();
-    const user = userEvent.setup();
-    render(<App />);
-
-    await user.click(await screen.findByRole("button", { name: /README\.md/ }));
-    expect(await screen.findByText("# gitto")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Refresh" }));
-    await waitFor(() => expect(screen.getByRole("button", { name: "Refresh" })).toBeEnabled());
-
-    expect(screen.getByText("# gitto")).toBeInTheDocument();
-    expect(screen.getByLabelText("Branch")).toHaveValue("refs/heads/main");
-    expect(
-      within(screen.getByLabelText("Repository path")).getByText("HEAD · abc1234"),
-    ).toBeInTheDocument();
-    expect(fetchMock.mock.calls.filter(([url]) => url === "/api/status")).toHaveLength(2);
-    expect(fetchMock.mock.calls.filter(([url]) => url === "/api/repo")).toHaveLength(1);
-    expect(
-      fetchMock.mock.calls.filter(
-        ([url]) => typeof url === "string" && url.startsWith("/api/tree"),
-      ),
-    ).toHaveLength(1);
-    expect(
-      fetchMock.mock.calls.filter(
-        ([url]) => typeof url === "string" && url.startsWith("/api/commits"),
-      ),
-    ).toHaveLength(1);
-  });
-
-  it("keeps the preview visible when refreshing changes fails", async () => {
-    const fetchMock = installFetch();
-    const user = userEvent.setup();
-    render(<App />);
-
-    await user.click(await screen.findByRole("button", { name: /README\.md/ }));
-    expect(await screen.findByText("# gitto")).toBeInTheDocument();
-    fetchMock.mockImplementationOnce(() => response({ error: "status unavailable" }, 500));
-    await user.click(screen.getByRole("button", { name: "Refresh" }));
-
-    expect(await screen.findByRole("alert")).toHaveTextContent("status unavailable");
-    expect(screen.getByText("# gitto")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Refresh" })).toBeEnabled();
   });
 
   it("shows parent directories for changed files with the same name", async () => {
@@ -1149,7 +1127,6 @@ describe("App", () => {
     expect(within(changes).getByText("2")).toBeInTheDocument();
     expect(within(changes).queryByText("main.ts")).not.toBeInTheDocument();
     expect(within(changes).queryByText("Untracked")).not.toBeInTheDocument();
-    expect(within(changes).queryByRole("button", { name: "Refresh" })).not.toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/diff?source=commit&revision=abc123456789&statsOnly=true",
     );
@@ -1172,7 +1149,6 @@ describe("App", () => {
     ).toBeVisible();
     expect(within(changes).getByText("Untracked")).toBeInTheDocument();
     expect(within(changes).queryByText("new.ts")).not.toBeInTheDocument();
-    expect(within(changes).getByRole("button", { name: "Refresh" })).toBeEnabled();
   });
 
   it("shows historical changes in a bare repository", async () => {

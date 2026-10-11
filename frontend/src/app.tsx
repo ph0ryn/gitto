@@ -184,7 +184,6 @@ export default function App() {
   const [viewLabel, setViewLabel] = useState("Select a file");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
-  const [refreshingStatus, setRefreshingStatus] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const loadWorkspace = useCallback(async () => {
@@ -236,7 +235,7 @@ export default function App() {
     if (repo) document.title = `${repo.name} | gitto`;
   }, [repo]);
 
-  const ready = Boolean(repo) && !loading && !busy && !refreshingStatus;
+  const ready = Boolean(repo) && !loading && !busy;
   const openFilePath = fileView?.path;
   useEffect(() => {
     if (!ready) return;
@@ -517,18 +516,6 @@ export default function App() {
     }
   }
 
-  async function refreshStatus() {
-    setRefreshingStatus(true);
-    setError(null);
-    try {
-      setStatus(await loadStatus());
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Could not load changes.");
-    } finally {
-      setRefreshingStatus(false);
-    }
-  }
-
   async function loadMore() {
     setBusy(true);
     try {
@@ -735,36 +722,10 @@ export default function App() {
             )}
           </div>
         </section>
-        <aside
-          className="changes-column"
-          aria-label="Changed files"
-          aria-busy={busy || refreshingStatus}
-        >
+        <aside className="changes-column" aria-label="Changed files" aria-busy={busy}>
           <div className="column-heading">
             <h2>Changes</h2>
-            <div className="heading-actions">
-              <span>{changeCount}</span>
-              {!selectedCommit && (
-                <button
-                  className="icon-button"
-                  onClick={() => void refreshStatus()}
-                  disabled={busy || refreshingStatus}
-                  aria-label="Refresh"
-                  title={refreshingStatus ? "Refreshing changes…" : "Refresh changes"}
-                >
-                  <svg
-                    className="ui-icon"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="1.5"
-                    aria-hidden="true"
-                  >
-                    <path d="M20 7v5h-5M4 17v-5h5M6.1 6.1A8 8 0 0 1 20 12M4 12a8 8 0 0 0 13.9 5.9" />
-                  </svg>
-                </button>
-              )}
-            </div>
+            <span>{changeCount}</span>
           </div>
           <div className="pane-scroll changes-list">
             {repo?.bare && !selectedCommit ? (
