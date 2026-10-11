@@ -28,11 +28,11 @@ GitHubの閲覧体験に近い馴染みやすさを保ちながら、ローカ�
 
 ## Capabilities and Constraints
 
-コミット履歴、ブランチ、ファイルツリー、コミットまたは作業ツリーのファイル内容、staged／unstaged／untracked／conflictsの状態とパッチを表示する。HEADが未作成のリポジトリでは履歴とツリーを空状態で表示する。APIエラー、読み込み中、空状態を画面で説明する。Gitへの書き込み操作は提供しない。
+コミット履歴、ブランチ、展開可能なファイルツリー、コミットのファイル内容、staged／unstaged／untracked／conflictsの状態とパッチを表示する。HEADまたはチェックアウト先のツリーには未追跡と新規のローカルファイルも含め、作業ツリーまたはindexの内容を開く。変更はTrackedとUntrackedの階層にまとめ、Trackedの追加・削除行数を示す。HEADが未作成のリポジトリでは履歴を空状態にし、ツリーにはローカルの新規ファイルを表示する。APIエラー、読み込み中、空状態を画面で説明する。Gitへの書き込み操作は提供しない。
 
 ## Brand Commitments
 
-製品名とCLI名は `gitto`。ユーザー画面は自然な日本語で、GitHubに近い落ち着いたrepo browserとする。
+製品名とCLI名は `gitto`。ユーザー画面は英語で、GitHubに近い落ち着いたrepo browserとする。ファイル内容とコミットメッセージは翻訳しない。
 
 ## Product Principles
 

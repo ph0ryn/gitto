@@ -1,12 +1,12 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-10-11T14:26:10Z",
+  "generatedAt": "2026-10-11T15:17:56.172636Z",
   "title": "Design System: gitto",
   "extensions": {
     "colorMeta": {
       "primary": {
         "role": "primary",
-        "displayName": "選択とフォーカスの青"
+        "displayName": "選択背景とフォーカスの青"
       },
       "surface": {
         "role": "neutral",
@@ -15,6 +15,22 @@
       "sidebar": {
         "role": "neutral",
         "displayName": "操作欄の淡い中性色"
+      },
+      "modified": {
+        "role": "semantic",
+        "displayName": "変更の黄"
+      },
+      "added": {
+        "role": "semantic",
+        "displayName": "追加の緑"
+      },
+      "deleted": {
+        "role": "semantic",
+        "displayName": "削除と競合の赤"
+      },
+      "untracked": {
+        "role": "semantic",
+        "displayName": "未追跡の薄いくすんだ緑"
       }
     },
     "shadows": [],
@@ -27,37 +43,37 @@
       "kind": "button",
       "refersTo": "icon-button",
       "description": "変更一覧だけを更新する小さな操作。",
-      "html": "<button class=\"ds-button\" aria-label=\"変更を更新\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\"><path d=\"M20 7v5h-5M4 17v-5h5M6.1 6.1A8 8 0 0 1 20 12M4 12a8 8 0 0 0 13.9 5.9\"/></svg></button>",
+      "html": "<button class=\"ds-button\" aria-label=\"Refresh changes\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\"><path d=\"M20 7v5h-5M4 17v-5h5M6.1 6.1A8 8 0 0 1 20 12M4 12a8 8 0 0 0 13.9 5.9\"/></svg></button>",
       "css": ".ds-button{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border:0;border-radius:3px;background:transparent;color:var(--muted);cursor:pointer}.ds-button:hover{background:#e8ecf0;color:var(--ink)}.ds-button:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}.ds-button:disabled{opacity:.5;cursor:not-allowed}"
     },
     {
       "name": "ブランチ選択",
       "kind": "input",
       "description": "標準のselectで閲覧するリビジョンを選ぶ。",
-      "html": "<select class=\"ds-select\" aria-label=\"ブランチ\"><option>main</option><option>feature</option></select>",
+      "html": "<select class=\"ds-select\" aria-label=\"Branch\"><option>main</option><option>feature</option></select>",
       "css": ".ds-select{width:180px;height:32px;border:0;border-radius:3px;background:transparent;color:var(--ink);font:500 13px system-ui;cursor:pointer}.ds-select:hover{background:#edf0f3}.ds-select:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}"
     },
     {
       "name": "ファイルの選択行",
       "kind": "nav",
       "refersTo": "selected-row",
-      "description": "選択中のファイルを青い文字と淡い背景で示す。",
+      "description": "選択背景を青くし、名前は通常のグレーまたはGit状態の色を保つ。",
       "html": "<button class=\"ds-row\">README.md</button>",
-      "css": ".ds-row{width:200px;min-height:30px;padding:4px 14px;border:0;background:var(--selection);color:var(--accent);text-align:left;font:12px system-ui;cursor:pointer}.ds-row:hover{background:#edf0f3}.ds-row:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}"
+      "css": ".ds-row{width:200px;min-height:24px;padding:2px 8px;border:0;background:var(--selection);color:var(--muted);text-align:left;font:12px/1.6 ui-monospace,monospace;cursor:pointer}.ds-row:hover{background:#edf0f3}.ds-row:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}"
     },
     {
       "name": "本文のタブ",
       "kind": "custom",
       "description": "開いている項目だけにタブを表示する。",
-      "html": "<div class=\"ds-tab\">README.md<button aria-label=\"表示を閉じる\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\"><path d=\"m7 7 10 10M7 17 17 7\"/></svg></button></div>",
+      "html": "<div class=\"ds-tab\">README.md<button aria-label=\"Close view\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\"><path d=\"m7 7 10 10M7 17 17 7\"/></svg></button></div>",
       "css": ".ds-tab{display:inline-flex;align-items:center;height:44px;gap:8px;padding:0 12px 0 16px;border-right:1px solid var(--line);background:var(--surface);color:var(--ink);font:600 12px system-ui}.ds-tab button{display:flex;align-items:center;justify-content:center;width:28px;height:28px;padding:0;border:0;border-radius:3px;background:transparent;color:var(--muted);cursor:pointer}.ds-tab button:hover{background:#e8ecf0}.ds-tab button:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}"
     },
     {
-      "name": "ディレクトリのパス",
+      "name": "展開するフォルダー",
       "kind": "nav",
-      "description": "ファイル欄で上位ディレクトリへ移動する。",
-      "html": "<nav class=\"ds-path\"><button>ルート</button><span>/</span><button>src</button></nav>",
-      "css": ".ds-path{display:flex;align-items:center;height:28px;gap:5px;padding:0 14px;color:var(--muted);font:11px system-ui}.ds-path button{padding:2px 0;border:0;background:transparent;color:inherit;font:inherit;cursor:pointer}.ds-path button:hover{color:var(--accent);text-decoration:underline;text-underline-offset:3px}.ds-path button:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}"
+      "description": "同じ欄内でフォルダーを開閉し、兄弟項目と本文を保つ。",
+      "html": "<details class=\"ds-folder\" open><summary>frontend/src</summary><button>app.tsx<span class=\"ds-stats\"><span>+ 140</span><span>− 6</span></span></button></details>",
+      "css": ".ds-folder{width:280px;color:var(--ink);font:12px/1.6 ui-monospace,monospace}.ds-folder summary{padding:2px 8px;cursor:pointer}.ds-folder button{display:flex;align-items:center;width:100%;min-height:24px;padding:2px 8px 2px 24px;border:0;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer}.ds-folder button:hover,.ds-folder summary:hover{background:#edf0f3}.ds-stats{display:flex;gap:6px;margin-left:auto;font-size:11px}.ds-stats span:first-child{color:#1a7f37}.ds-stats span:last-child{color:#cf222e}.ds-folder button:focus-visible,.ds-folder summary:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}"
     }
   ],
   "narrative": {
@@ -67,9 +83,16 @@
       "白基調と青い選択状態",
       "固定された4欄と全幅フッター",
       "欄ごとのスクロール",
-      "読み取り専用"
+      "読み取り専用",
+      "その場で展開するツリー",
+      "TrackedとUntrackedの階層表示",
+      "英語UI",
+      "Git状態の名前色と配下の変更を示すフォルダー",
+      "HEADでは未追跡と新規のローカルファイルも表示"
     ],
-    "rules": [],
+    "rules": [
+      "左ツリーの状態色はHEADまたは現在のチェックアウト先だけに表示する。選択は背景で示し、名前の色を保つ。変更のない名前は少し薄いグレーにする。"
+    ],
     "dos": [
       "内容が増えても欄の境界とフッターを動かさない。",
       "変更一覧の更新失敗を表示し、開いている本文を保持する。"
