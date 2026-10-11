@@ -57,21 +57,21 @@ const EMPTY_STATUS: Status = {
   conflicts: [],
 };
 
-async function api<T>(url: string): Promise<T> {
-  const response = await fetch(url);
+async function api<T>(url: string, signal?: AbortSignal): Promise<T> {
+  const response = await (signal ? fetch(url, { signal }) : fetch(url));
   const data = (await response.json()) as T & { error?: string };
   if (!response.ok) throw new Error(data.error ?? `HTTP ${response.status}`);
   return data;
 }
 
-async function loadStatus(): Promise<Status> {
-  const status = await api<Status>("/api/status");
+async function loadStatus(signal?: AbortSignal): Promise<Status> {
+  const status = await api<Status>("/api/status", signal);
   const [stagedStats, unstagedStats] = await Promise.all(
     (["staged", "unstaged"] as const).map(async (source) => {
       const entries =
         source === "staged" ? status.staged : [...status.unstaged, ...status.conflicts];
       if (entries.length === 0) return new Map<string, DiffFile>();
-      const diff = await api<DiffView>(`/api/diff?source=${source}&statsOnly=true`);
+      const diff = await api<DiffView>(`/api/diff?source=${source}&statsOnly=true`, signal);
       return new Map(diff.files.map((file) => [file.path, file]));
     }),
   );
@@ -88,6 +88,57 @@ async function loadStatus(): Promise<Status> {
     unstaged: withStats(status.unstaged, unstagedStats),
     conflicts: withStats(status.conflicts, unstagedStats),
   };
+}
+
+async function loadFile(
+  entry: TreeEntry,
+  revision: string,
+  status: Status,
+  local: boolean,
+  signal?: AbortSignal,
+): Promise<FileView> {
+  const untracked = status.untracked.some((file) => file.path === entry.path);
+  const removed =
+    local &&
+    !untracked &&
+    [...status.staged, ...status.unstaged].some(
+      (file) =>
+        (file.path === entry.path && file.status === "deleted") ||
+        (file.oldPath === entry.path && file.status === "renamed"),
+    );
+  const source = removed
+    ? entry.local &&
+      status.staged.some(
+        (file) => file.path === entry.path && ["added", "renamed", "copied"].includes(file.status),
+      )
+      ? "index"
+      : "commit"
+    : local
+      ? "worktree"
+      : "commit";
+  const data = await api<FileView>(
+    `/api/file?source=${source}&revision=${encodeURIComponent(revision)}&path=${encodeURIComponent(entry.path)}`,
+    signal,
+  );
+  if (data.kind === "text") {
+    if (data.content === null) throw new Error("Text content is missing.");
+    const count = Math.max(
+      1,
+      data.content.split("\n").length - Number(data.content.endsWith("\n")),
+    );
+    if (removed) {
+      data.removed = true;
+      data.changes = [{ line: 1, endLine: count, kind: "deleted" }];
+    } else {
+      const diff = await api<DiffView>(
+        `/api/diff?source=${local ? "worktree" : "commit"}&revision=${encodeURIComponent(revision)}&path=${encodeURIComponent(entry.path)}`,
+        signal,
+      );
+      data.changes = lineChanges(diff.patch, count);
+      data.changesTruncated = diff.truncated;
+    }
+  }
+  return data;
 }
 
 function formatDate(seconds: number) {
@@ -121,11 +172,15 @@ export default function App() {
   const [tree, setTree] = useState<TreeEntry[]>([]);
   const [status, setStatus] = useState<Status>(EMPTY_STATUS);
   const [revision, setRevision] = useState("HEAD");
+  const [historyRevision, setHistoryRevision] = useState("HEAD");
+  const [historyPages, setHistoryPages] = useState(1);
   const [selectedBranchRevision, setSelectedBranchRevision] = useState("");
   const [selectedCommit, setSelectedCommit] = useState<string | null>(null);
   const [commitChanges, setCommitChanges] = useState<ChangeEntry[]>([]);
   const [selectedChange, setSelectedChange] = useState<string | null>(null);
   const [fileView, setFileView] = useState<FileView | null>(null);
+  const [fileEntry, setFileEntry] = useState<TreeEntry | null>(null);
+  const [refreshVersion, setRefreshVersion] = useState(0);
   const [diffView, setDiffView] = useState<DiffView | null>(null);
   const [viewLabel, setViewLabel] = useState("Select a file");
   const [loading, setLoading] = useState(true);
@@ -155,6 +210,8 @@ export default function App() {
       setTree(treeData.entries);
       setStatus(statusData);
       setRevision(requestRevision);
+      setHistoryRevision(requestRevision);
+      setHistoryPages(1);
       setSelectedBranchRevision(
         repoData.branches.find((branch) => branch.name === repoData.head)?.revision ?? "HEAD",
       );
@@ -179,6 +236,143 @@ export default function App() {
   useEffect(() => {
     if (repo) document.title = `${repo.name} | gitto`;
   }, [repo]);
+
+  const ready = Boolean(repo) && !loading && !busy && !refreshingStatus;
+  const openFilePath = fileView?.path;
+  useEffect(() => {
+    if (!ready) return;
+    let timer: ReturnType<typeof setTimeout>;
+    let controller: AbortController | null = null;
+    let previewController: AbortController | null = null;
+    let workspaceError: string | null = null;
+    let previewError: string | null = null;
+    let disposed = false;
+
+    async function refreshPreview(repoData: Repo, statusData: Status) {
+      if (previewController || selectedCommit || (!openFilePath && !selectedChange)) return;
+      previewController = new AbortController();
+      const { signal } = previewController;
+      try {
+        if (openFilePath && fileEntry) {
+          const local =
+            !repoData.bare &&
+            (revision === "HEAD" ||
+              revision ===
+                repoData.branches.find((branch) => branch.name === repoData.head)?.revision);
+          const data = await loadFile(fileEntry, revision, statusData, local, signal);
+          if (signal.aborted) return;
+          setFileView(data);
+        } else if (selectedChange) {
+          const source = selectedChange.slice(0, selectedChange.indexOf(":"));
+          const data = await api<DiffView>(
+            `/api/diff?source=${source}&revision=${encodeURIComponent(revision)}&path=${encodeURIComponent(viewLabel)}`,
+            signal,
+          );
+          if (signal.aborted) return;
+          setDiffView(data);
+        }
+        previewError = null;
+        setError(workspaceError);
+      } catch (reason) {
+        if (!signal.aborted) {
+          previewError =
+            reason instanceof Error ? reason.message : "Could not refresh the preview.";
+          setError(workspaceError ?? previewError);
+        }
+      } finally {
+        previewController = null;
+      }
+    }
+
+    async function refresh() {
+      if (document.hidden || controller) return;
+      controller = new AbortController();
+      const { signal } = controller;
+      try {
+        const repoData = await api<Repo>("/api/repo", signal);
+        if (signal.aborted) return;
+        setRepo(repoData);
+        const [pages, treeData, statusData] = await Promise.all([
+          Promise.all(
+            Array.from({ length: historyPages }, (_, page) =>
+              api<{ commits: Commit[]; hasMore: boolean }>(
+                `/api/commits?revision=${encodeURIComponent(historyRevision)}&offset=${page * 50}&limit=50`,
+                signal,
+              ),
+            ),
+          ),
+          api<{ entries: TreeEntry[] }>(
+            `/api/tree?revision=${encodeURIComponent(revision)}&path=`,
+            signal,
+          ),
+          loadStatus(signal),
+        ]);
+        if (signal.aborted) return;
+        setCommits(pages.flatMap((page) => page.commits));
+        setHasMore(pages[pages.length - 1].hasMore);
+        setTree(treeData.entries);
+        setStatus(statusData);
+        if (historyRevision === "HEAD") {
+          setSelectedBranchRevision(
+            repoData.branches.find((branch) => branch.name === repoData.head)?.revision ?? "HEAD",
+          );
+        }
+        setRefreshVersion((current) => current + 1);
+        workspaceError = null;
+        setError(previewError);
+        void refreshPreview(repoData, statusData);
+      } catch (reason) {
+        if (!signal.aborted) {
+          workspaceError =
+            reason instanceof Error ? reason.message : "Could not refresh the repository.";
+          setError(workspaceError);
+        }
+      } finally {
+        controller = null;
+        if (!disposed) timer = setTimeout(() => void refresh(), 2000);
+      }
+    }
+
+    function resume() {
+      clearTimeout(timer);
+      if (document.hidden) {
+        controller?.abort();
+        previewController?.abort();
+      } else void refresh();
+    }
+
+    timer = setTimeout(() => void refresh(), 2000);
+    document.addEventListener("visibilitychange", resume);
+    window.addEventListener("focus", resume);
+    return () => {
+      disposed = true;
+      clearTimeout(timer);
+      controller?.abort();
+      previewController?.abort();
+      document.removeEventListener("visibilitychange", resume);
+      window.removeEventListener("focus", resume);
+    };
+  }, [
+    ready,
+    historyRevision,
+    revision,
+    historyPages,
+    selectedCommit,
+    selectedChange,
+    openFilePath,
+    fileEntry,
+    viewLabel,
+  ]);
+
+  const loadChildren = useCallback(
+    async (entry: TreeEntry) => {
+      const data = await api<{ entries: TreeEntry[] }>(
+        `/api/tree?revision=${encodeURIComponent(revision)}&path=${encodeURIComponent(entry.path)}`,
+      );
+      return data.entries;
+    },
+    [revision],
+  );
 
   async function chooseCommit(commit: Commit) {
     setBusy(true);
@@ -234,6 +428,8 @@ export default function App() {
       setHasMore(commitData.hasMore);
       setTree(treeData.entries);
       setRevision(branch.revision);
+      setHistoryRevision(branch.revision);
+      setHistoryPages(1);
       setSelectedBranchRevision(branch.revision);
       setSelectedCommit(null);
       setCommitChanges([]);
@@ -266,6 +462,8 @@ export default function App() {
       setHasMore(commitData.hasMore);
       setTree(treeData.entries);
       setRevision("HEAD");
+      setHistoryRevision("HEAD");
+      setHistoryPages(1);
       setSelectedBranchRevision("HEAD");
       setSelectedCommit(null);
       setCommitChanges([]);
@@ -286,50 +484,9 @@ export default function App() {
     setSelectedChange(null);
     setViewLabel("Loading…");
     try {
-      const local = viewingHead && !repo?.bare;
-      const untracked = status.untracked.some((file) => file.path === entry.path);
-      const removed =
-        local &&
-        !untracked &&
-        [...status.staged, ...status.unstaged].some(
-          (file) =>
-            (file.path === entry.path && file.status === "deleted") ||
-            (file.oldPath === entry.path && file.status === "renamed"),
-        );
-      const source = removed
-        ? entry.local && status.staged.some((file) => file.path === entry.path)
-          ? "index"
-          : "commit"
-        : local
-          ? "worktree"
-          : "commit";
-      const data = await api<FileView>(
-        `/api/file?source=${source}&revision=${encodeURIComponent(revision)}&path=${encodeURIComponent(entry.path)}`,
-      );
-      if (data.kind === "text") {
-        if (data.content === null) throw new Error("Text content is missing.");
-        const count = Math.max(
-          1,
-          data.content.split("\n").length - Number(data.content.endsWith("\n")),
-        );
-        if (removed) {
-          data.removed = true;
-          data.changes = [
-            {
-              line: 1,
-              endLine: count,
-              kind: "deleted",
-            },
-          ];
-        } else {
-          const diff = await api<DiffView>(
-            `/api/diff?source=${local ? "worktree" : "commit"}&revision=${encodeURIComponent(revision)}&path=${encodeURIComponent(entry.path)}`,
-          );
-          data.changes = lineChanges(diff.patch, count);
-          data.changesTruncated = diff.truncated;
-        }
-      }
+      const data = await loadFile(entry, revision, status, viewingHead && !repo?.bare);
       setFileView(data);
+      setFileEntry(entry);
       setViewLabel(entry.path);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Could not load the file.");
@@ -377,9 +534,10 @@ export default function App() {
     setBusy(true);
     try {
       const data = await api<{ commits: Commit[]; hasMore: boolean }>(
-        `/api/commits?revision=${encodeURIComponent(selectedBranchRevision || "HEAD")}&offset=${commits.length}&limit=50`,
+        `/api/commits?revision=${encodeURIComponent(historyRevision)}&offset=${commits.length}&limit=50`,
       );
       setCommits((current) => [...current, ...data.commits]);
+      setHistoryPages(Math.ceil((commits.length + data.commits.length) / 50));
       setHasMore(data.hasMore);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Could not load history.");
@@ -511,14 +669,9 @@ export default function App() {
                 selectedPath={fileView?.path}
                 decorations={viewingHead ? fileDecorations : undefined}
                 localPaths={localPaths}
+                refreshVersion={refreshVersion}
                 disabled={busy}
-                loadChildren={async (entry) => {
-                  setError(null);
-                  const data = await api<{ entries: TreeEntry[] }>(
-                    `/api/tree?revision=${encodeURIComponent(revision)}&path=${encodeURIComponent(entry.path)}`,
-                  );
-                  return data.entries;
-                }}
+                loadChildren={loadChildren}
                 onSelect={(entry) => void openEntry(entry)}
                 onError={setError}
               />

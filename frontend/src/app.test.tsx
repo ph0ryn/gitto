@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import App from "./app";
@@ -47,13 +47,14 @@ function response(data: unknown, statusCode = 200) {
   return Promise.resolve({
     ok: statusCode >= 200 && statusCode < 300,
     status: statusCode,
-    json: async () => data,
+    json: async () => structuredClone(data),
   }) as Promise<Response>;
 }
 
 function installFetch(
   options: {
     repoData?: typeof repo;
+    commitData?: typeof commits;
     statusData?: TestStatus;
     diffData?: unknown;
     commitStats?: unknown;
@@ -85,7 +86,7 @@ function installFetch(
       const url =
         typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
       if (url === "/api/repo") return response(repoData);
-      if (url.startsWith("/api/commits")) return response(commits);
+      if (url.startsWith("/api/commits")) return response(options.commitData ?? commits);
       if (url.startsWith("/api/tree")) {
         const path = new URL(url, "http://localhost").searchParams.get("path") ?? "";
         const entries = options.trees ? options.trees[path] : tree.entries;
@@ -132,10 +133,384 @@ function installFetch(
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  vi.useRealTimers();
   document.title = "gitto";
 });
 
 describe("App", () => {
+  it("automatically updates history, branches, changes, files, and the open file", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const options = {
+      repoData: structuredClone(repo),
+      commitData: structuredClone(commits),
+      statusData: { staged: [], unstaged: [], untracked: [], conflicts: [] } as TestStatus,
+      fileContent: "before\n",
+      trees: {
+        "": [{ name: "src", path: "src", kind: "tree", size: null }],
+        src: [{ name: "main.ts", path: "src/main.ts", kind: "blob", size: 7 }],
+      } as Record<string, TreeEntry[]>,
+    };
+    installFetch(options);
+    await act(async () => {
+      render(<App />);
+    });
+    const files = screen.getByRole("complementary", { name: "File tree" });
+    await act(async () => {
+      fireEvent.click(within(files).getByRole("button", { name: "src" }));
+    });
+    await act(async () => {
+      fireEvent.click(within(files).getByRole("button", { name: "main.ts" }));
+    });
+    expect(document.querySelector(".code-view code")).toHaveTextContent("before");
+
+    options.repoData.head = "feature";
+    options.repoData.branches.push({ name: "feature", revision: "refs/heads/feature" });
+    options.commitData.commits.unshift({
+      ...commits.commits[0],
+      id: "def123456789",
+      shortId: "def1234",
+      summary: "New commit",
+    });
+    options.statusData.unstaged.push({ path: "src/main.ts", oldPath: null, status: "modified" });
+    options.fileContent = "after\n";
+    options.trees[""].push({ name: "new.txt", path: "new.txt", kind: "blob", size: 3 });
+    options.trees.src.push({ name: "next.ts", path: "src/next.ts", kind: "blob", size: 3 });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000);
+    });
+
+    expect(screen.getByRole("button", { name: /New commit/ })).toBeInTheDocument();
+    expect(screen.getByLabelText("Branch")).toHaveValue("refs/heads/feature");
+    expect(
+      screen.getByRole("button", { name: "src/main.ts diff (Unstaged · modified)" }),
+    ).toBeInTheDocument();
+    expect(within(files).getByRole("button", { name: "new.txt" })).toBeInTheDocument();
+    expect(within(files).getByRole("button", { name: "next.ts" })).toBeInTheDocument();
+    expect(within(files).getByRole("button", { name: "src" })).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
+    expect(within(files).getByRole("button", { name: "main.ts" })).toHaveClass("is-selected");
+    expect(document.querySelector(".code-view code")).toHaveTextContent("after");
+  });
+
+  it("automatically refreshes the selected working diff without clearing its selection", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const options = {
+      diffData: {
+        patch:
+          "diff --git a/main.ts b/main.ts\n--- a/main.ts\n+++ b/main.ts\n@@ -1 +1 @@\n-old\n+before\n",
+        files: [
+          {
+            path: "main.ts",
+            oldPath: null,
+            status: "modified",
+            additions: 1,
+            deletions: 1,
+            binary: false,
+          },
+        ],
+        truncated: false,
+      },
+    };
+    installFetch(options);
+    await act(async () => {
+      render(<App />);
+    });
+    const change = screen.getByRole("button", { name: "src/main.ts diff (Staged · modified)" });
+    await act(async () => {
+      fireEvent.click(change);
+    });
+    options.diffData.patch = options.diffData.patch.replace("+before", "+after");
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000);
+    });
+    expect(screen.getByRole("table", { name: "main.ts diff" })).toHaveTextContent("after");
+    expect(change).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("pauses while hidden, refreshes on return and focus, and stops after unmount", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const hidden = vi.spyOn(document, "hidden", "get").mockReturnValue(false);
+    const fetchMock = installFetch();
+    let unmount!: () => void;
+    await act(async () => {
+      unmount = render(<App />).unmount;
+    });
+    fetchMock.mockClear();
+    hidden.mockReturnValue(true);
+    await act(async () => {
+      fireEvent(document, new Event("visibilitychange"));
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10000);
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    hidden.mockReturnValue(false);
+    await act(async () => {
+      fireEvent(document, new Event("visibilitychange"));
+    });
+    expect(fetchMock.mock.calls.filter(([url]) => url === "/api/repo")).toHaveLength(1);
+    await act(async () => {
+      fireEvent(window, new Event("focus"));
+    });
+    expect(fetchMock.mock.calls.filter(([url]) => url === "/api/repo")).toHaveLength(2);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000);
+    });
+    expect(fetchMock.mock.calls.filter(([url]) => url === "/api/repo")).toHaveLength(3);
+    unmount();
+    fetchMock.mockClear();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10000);
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("does not overlap slow refreshes or apply them after the user selects a commit", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const fetchMock = installFetch();
+    await act(async () => {
+      render(<App />);
+    });
+    let resolveRepo!: (value: Response) => void;
+    const pending = new Promise<Response>((resolve) => {
+      resolveRepo = resolve;
+    });
+    fetchMock.mockClear();
+    fetchMock.mockImplementationOnce(() => pending);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(6000);
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const signal = fetchMock.mock.calls[0][1]?.signal;
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /最初のコミット/ }));
+    });
+    expect(signal?.aborted).toBe(true);
+    await act(async () => {
+      resolveRepo(await response({ ...repo, name: "Old response" }));
+    });
+    expect(document.title).toBe("sample-repo | gitto");
+    expect(screen.getByRole("button", { name: /最初のコミット/ })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(screen.getByLabelText("Branch")).toHaveValue(commits.commits[0].id);
+  });
+
+  it("keeps the preview through a refresh failure and retries automatically", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const fetchMock = installFetch();
+    await act(async () => {
+      render(<App />);
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "README.md" }));
+    });
+    fetchMock.mockImplementationOnce(() => response({ error: "Temporarily unavailable" }, 500));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000);
+    });
+    expect(screen.getByRole("alert")).toHaveTextContent("Temporarily unavailable");
+    expect(screen.getByText("# gitto")).toBeInTheDocument();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000);
+    });
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByText("# gitto")).toBeInTheDocument();
+  });
+
+  it("updates the workspace even when the open file is no longer available", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const options = { commitData: structuredClone(commits) };
+    const fetchMock = installFetch(options);
+    await act(async () => {
+      render(<App />);
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "README.md" }));
+    });
+    const originalFetch = fetchMock.getMockImplementation()!;
+    fetchMock.mockImplementation((input, init) =>
+      typeof input === "string" && input.startsWith("/api/file")
+        ? response({ error: "File was removed" }, 404)
+        : originalFetch(input, init),
+    );
+    options.commitData.commits.unshift({
+      ...commits.commits[0],
+      id: "def123456789",
+      summary: "New commit",
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000);
+    });
+    expect(screen.getByRole("alert")).toHaveTextContent("File was removed");
+    expect(screen.getByRole("button", { name: /New commit/ })).toBeInTheDocument();
+    expect(screen.getByText("# gitto")).toBeInTheDocument();
+  });
+
+  it("keeps updating the workspace while a preview refresh is pending", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const options = { commitData: structuredClone(commits) };
+    const fetchMock = installFetch(options);
+    await act(async () => {
+      render(<App />);
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "README.md" }));
+    });
+    const originalFetch = fetchMock.getMockImplementation()!;
+    let resolveFile!: (value: Response) => void;
+    const pendingFile = new Promise<Response>((resolve) => {
+      resolveFile = resolve;
+    });
+    fetchMock.mockClear();
+    fetchMock.mockImplementation((input, init) =>
+      typeof input === "string" && input.startsWith("/api/file")
+        ? pendingFile
+        : originalFetch(input, init),
+    );
+    options.commitData.commits.unshift({
+      ...commits.commits[0],
+      id: "def123456789",
+      summary: "New commit",
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000);
+    });
+    expect(screen.getByRole("button", { name: /New commit/ })).toBeInTheDocument();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(4000);
+    });
+    expect(fetchMock.mock.calls.filter(([url]) => url === "/api/repo")).toHaveLength(3);
+    expect(
+      fetchMock.mock.calls.filter(
+        ([url]) => typeof url === "string" && url.startsWith("/api/file"),
+      ),
+    ).toHaveLength(1);
+    await act(async () => {
+      resolveFile(
+        await response({ path: "README.md", kind: "text", content: "Updated preview\n", size: 16 }),
+      );
+    });
+    expect(screen.getByText("Updated preview")).toBeInTheDocument();
+  });
+
+  it("keeps a historical commit selected while its branch history updates", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const options = { commitData: structuredClone(commits) };
+    const fetchMock = installFetch(options);
+    await act(async () => {
+      render(<App />);
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /最初のコミット/ }));
+    });
+    fetchMock.mockClear();
+    options.commitData.commits.unshift({
+      ...commits.commits[0],
+      id: "def123456789",
+      summary: "New commit",
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000);
+    });
+    expect(screen.getByRole("button", { name: /New commit/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /最初のコミット/ })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(screen.getByLabelText("Branch")).toHaveValue(commits.commits[0].id);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/commits?revision=HEAD&offset=0&limit=50",
+      expect.anything(),
+    );
+    expect(fetchMock).toHaveBeenCalledWith(
+      `/api/tree?revision=${commits.commits[0].id}&path=`,
+      expect.anything(),
+    );
+    expect(
+      fetchMock.mock.calls.some(
+        ([url]) => typeof url === "string" && url.includes("source=commit"),
+      ),
+    ).toBe(false);
+  });
+
+  it("refreshes every loaded history page without resetting pagination", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const history = Array.from({ length: 75 }, (_, index) => ({
+      ...commits.commits[0],
+      id: `commit-${index}`,
+      summary: `Commit ${index}`,
+    }));
+    const fetchMock = installFetch();
+    const originalFetch = fetchMock.getMockImplementation()!;
+    fetchMock.mockImplementation((input, init) => {
+      if (typeof input !== "string" || !input.startsWith("/api/commits"))
+        return originalFetch(input, init);
+      const query = new URL(input, "http://localhost").searchParams;
+      const offset = Number(query.get("offset"));
+      return response({
+        commits: history.slice(offset, offset + 50),
+        hasMore: offset + 50 < history.length,
+      });
+    });
+    await act(async () => {
+      render(<App />);
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Load more" }));
+    });
+    const pane = screen.getByRole("complementary", { name: "Commit history" });
+    expect(within(pane).getAllByRole("button")).toHaveLength(75);
+    history.unshift({ ...commits.commits[0], id: "new-commit", summary: "New commit" });
+    fetchMock.mockClear();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000);
+    });
+    expect(within(pane).getAllByRole("button")).toHaveLength(76);
+    expect(screen.getByRole("button", { name: /New commit/ })).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/commits?revision=HEAD&offset=50&limit=50",
+      expect.anything(),
+    );
+    expect(screen.queryByRole("button", { name: "Load more" })).not.toBeInTheDocument();
+  });
+
+  it("uses HEAD after an open untracked file is committed and then staged for deletion", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const options = {
+      statusData: {
+        staged: [],
+        unstaged: [],
+        conflicts: [],
+        untracked: [{ path: "notes.md", oldPath: null, status: "untracked" }],
+      } as TestStatus,
+      trees: { "": [] } as Record<string, TreeEntry[]>,
+    };
+    const fetchMock = installFetch(options);
+    await act(async () => {
+      render(<App />);
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "notes.md" }));
+    });
+    options.statusData.untracked = [];
+    options.statusData.staged = [{ path: "notes.md", oldPath: null, status: "deleted" }];
+    options.trees[""] = [{ name: "notes.md", path: "notes.md", kind: "blob", size: 7 }];
+    fetchMock.mockClear();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000);
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/file?source=commit&revision=HEAD&path=notes.md",
+      expect.anything(),
+    );
+    expect(screen.getByText("Removed from working tree")).toBeInTheDocument();
+  });
+
   it("shows a single-column diff with source syntax and separate change gutters", async () => {
     installFetch({
       diffData: {
@@ -420,7 +795,7 @@ describe("App", () => {
     await user.click(folder);
 
     expect(await screen.findByRole("alert")).toHaveTextContent("Folder unavailable");
-    expect(folder).toHaveAttribute("aria-expanded", "false");
+    expect(folder).toHaveAttribute("aria-expanded", "true");
     expect(within(files).getByRole("button", { name: "README.md" })).toBeVisible();
     expect(screen.getByText("# gitto")).toBeInTheDocument();
   });

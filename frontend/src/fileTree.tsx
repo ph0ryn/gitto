@@ -54,6 +54,7 @@ type FileTreeProps = {
   localPaths?: string[];
   disabled: boolean;
   loadChildren: (entry: TreeEntry) => Promise<TreeEntry[]>;
+  refreshVersion?: number;
   onSelect: (entry: TreeEntry) => void;
   onError: (message: string) => void;
   depth?: number;
@@ -67,7 +68,7 @@ export default function FileTree({ entries, depth = 0, parentPath = "", ...props
   return (
     <ul className="tree-list">
       {sorted.map((entry) => (
-        <FileTreeItem key={entry.path} entry={entry} depth={depth} {...props} />
+        <FileTreeItem key={`${entry.path}:${entry.kind}`} entry={entry} depth={depth} {...props} />
       ))}
     </ul>
   );
@@ -81,34 +82,90 @@ function FileTreeItem({
   const [expanded, setExpanded] = useState(false);
   const [children, setChildren] = useState<TreeEntry[] | null>(null);
   const [loading, setLoading] = useState(false);
-  const mounted = useRef(true);
-  useEffect(() => {
-    mounted.current = true;
-    return () => {
-      mounted.current = false;
-    };
-  }, []);
+  const refreshVersion = props.refreshVersion ?? 0;
   const folder = entry.kind === "tree";
+  const loaded = useRef<{
+    refreshVersion: number;
+    loadChildren: FileTreeProps["loadChildren"];
+    local: boolean;
+  } | null>(null);
+  const pending = useRef<{ cancelled: boolean } | null>(null);
 
-  async function select() {
+  function cancelPending() {
+    if (pending.current) pending.current.cancelled = true;
+    pending.current = null;
+    setLoading(false);
+  }
+
+  function load() {
+    if (pending.current) return;
+    const request = { cancelled: false };
+    pending.current = request;
+    setLoading(true);
+    let promise: Promise<TreeEntry[]>;
+    try {
+      promise = props.loadChildren(entry);
+    } catch (reason) {
+      promise = Promise.reject(reason);
+    }
+    void promise
+      .then((entries) => {
+        if (request.cancelled) return;
+        pending.current = null;
+        loaded.current = { refreshVersion, loadChildren: props.loadChildren, local: false };
+        setChildren(entries);
+      })
+      .catch((reason: unknown) => {
+        if (request.cancelled) return;
+        pending.current = null;
+        props.onError(reason instanceof Error ? reason.message : "Could not load the folder.");
+      })
+      .finally(() => {
+        if (!request.cancelled) {
+          pending.current = null;
+          setLoading(false);
+        }
+      });
+  }
+
+  useEffect(() => {
+    if (!expanded) return;
+    const current = loaded.current;
+    if (
+      current?.refreshVersion === refreshVersion &&
+      current.loadChildren === props.loadChildren &&
+      current.local === Boolean(entry.local)
+    ) {
+      return;
+    }
+    if (entry.local) {
+      loaded.current = { refreshVersion, loadChildren: props.loadChildren, local: true };
+      setChildren([]);
+      return;
+    }
+    load();
+    return cancelPending;
+  }, [expanded, props.loadChildren, entry.local, entry.kind]);
+
+  useEffect(() => {
+    if (!expanded || entry.local || pending.current) return;
+    const current = loaded.current;
+    if (
+      current?.refreshVersion === refreshVersion &&
+      current.loadChildren === props.loadChildren &&
+      !current.local
+    ) {
+      return;
+    }
+    load();
+  }, [refreshVersion]);
+
+  function select() {
     if (!folder) {
       props.onSelect(entry);
       return;
     }
     setExpanded(!expanded);
-    if (expanded || children) return;
-    setLoading(true);
-    try {
-      const entries = entry.local ? [] : await props.loadChildren(entry);
-      if (mounted.current) setChildren(entries);
-    } catch (reason) {
-      if (mounted.current) {
-        setExpanded(false);
-        props.onError(reason instanceof Error ? reason.message : "Could not load the folder.");
-      }
-    } finally {
-      if (mounted.current) setLoading(false);
-    }
   }
 
   return (
@@ -122,7 +179,7 @@ function FileTreeItem({
         data-change={props.decorations?.get(entry.path)}
         aria-description={props.decorations?.get(entry.path)}
         disabled={props.disabled || loading}
-        onClick={() => void select()}
+        onClick={select}
       >
         <TreeChevron expanded={folder ? expanded : undefined} />
         <EntryIcon kind={entry.kind} />
