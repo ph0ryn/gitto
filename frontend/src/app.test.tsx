@@ -1082,6 +1082,88 @@ describe("App", () => {
     expect(fetchMock).toHaveBeenCalledWith("/api/tree?revision=refs%2Fheads%2Fmain&path=");
   });
 
+  it.each([
+    { head: "main", branch: "refs/heads/main" },
+    { head: "deadbee", branch: "HEAD" },
+  ])("returns from a viewed commit to HEAD ($head)", async ({ head, branch }) => {
+    const fetchMock = installFetch({
+      repoData: {
+        ...repo,
+        head,
+        branches: [{ name: "feature", revision: "refs/heads/feature" }, ...repo.branches],
+      },
+    });
+    const user = userEvent.setup();
+    render(<App />);
+
+    const history = await screen.findByRole("complementary", { name: "Commit history" });
+    expect(within(history).queryByRole("button", { name: "Back to HEAD" })).not.toBeInTheDocument();
+    await user.selectOptions(screen.getByLabelText("Branch"), "refs/heads/feature");
+    await user.click(within(history).getByRole("button", { name: /最初のコミット/ }));
+    const backToHead = await within(history).findByRole("button", { name: "Back to HEAD" });
+    expect(
+      within(history).getByRole("heading", { name: "Commits" }).parentElement,
+    ).toContainElement(backToHead);
+    expect(
+      backToHead.compareDocumentPosition(within(history).getByText("1")) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+
+    await user.click(
+      within(screen.getByRole("complementary", { name: "File tree" })).getByRole("button", {
+        name: "README.md",
+      }),
+    );
+    await screen.findByText("# gitto");
+    await user.click(screen.getByRole("button", { name: "Close view" }));
+    expect(within(history).getByRole("button", { name: "Back to HEAD" })).toBeVisible();
+    fetchMock.mockClear();
+    await user.click(within(history).getByRole("button", { name: "Back to HEAD" }));
+
+    await waitFor(() =>
+      expect(
+        within(history).queryByRole("button", { name: "Back to HEAD" }),
+      ).not.toBeInTheDocument(),
+    );
+    expect(within(history).getByRole("button", { name: /最初のコミット/ })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+    expect(screen.getByLabelText("Branch")).toHaveValue(branch);
+    expect(
+      screen.getByRole("button", { name: "src/main.ts diff (Staged · modified)" }),
+    ).toBeVisible();
+    expect(screen.getByLabelText("Repository path")).toHaveTextContent("HEAD · abc1234");
+    expect(fetchMock).toHaveBeenCalledWith("/api/commits?revision=HEAD&offset=0&limit=50");
+    expect(fetchMock).toHaveBeenCalledWith("/api/tree?revision=HEAD&path=");
+  });
+
+  it("disables Back to HEAD while loading and keeps it available if loading fails", async () => {
+    const fetchMock = installFetch();
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: /最初のコミット/ }));
+    const backToHead = await screen.findByRole("button", { name: "Back to HEAD" });
+    let releaseHead!: () => void;
+    const headResponse = new Promise<Response>((resolve) => {
+      releaseHead = () => void response({ error: "Could not load HEAD." }, 500).then(resolve);
+    });
+    fetchMock.mockImplementationOnce(() => headResponse);
+
+    await user.click(backToHead);
+    expect(backToHead).toBeDisabled();
+    expect(screen.getByLabelText("Branch")).toBeDisabled();
+    releaseHead();
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Could not load HEAD.");
+    expect(backToHead).toBeEnabled();
+    expect(screen.getByLabelText("Branch")).toHaveValue("abc123456789");
+    await user.click(backToHead);
+    await waitFor(() => expect(backToHead).not.toBeInTheDocument());
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
   it("keeps complete commit changes while viewing individual files and restores local changes at the branch tip", async () => {
     const commitFiles = [
       {

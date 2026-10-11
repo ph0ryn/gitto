@@ -462,7 +462,9 @@ export default function App() {
       setRevision("HEAD");
       setHistoryRevision("HEAD");
       setHistoryPages(1);
-      setSelectedBranchRevision("HEAD");
+      setSelectedBranchRevision(
+        repo?.branches.find((branch) => branch.name === repo.head)?.revision ?? "HEAD",
+      );
       setSelectedCommit(null);
       setCommitChanges([]);
       setViewLabel("Select a file");
@@ -760,6 +762,11 @@ export default function App() {
         <aside className="history-column" aria-label="Commit history">
           <div className="column-heading">
             <h2>Commits</h2>
+            {selectedCommit && (
+              <button className="back-to-head" onClick={() => void chooseHead()} disabled={busy}>
+                Back to HEAD
+              </button>
+            )}
             <span>{commits.length}</span>
           </div>
           <div className="pane-scroll history-content">

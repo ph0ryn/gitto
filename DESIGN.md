@@ -177,6 +177,7 @@ gittoは、明るい室内で開発者がローカルGitを読み解くような
 - **Shape:** 5pxの角丸行、上下12px・左右10pxのpadding。
 - **Hierarchy:** summary messageを13pxの主情報、hashとauthorを11pxの補助行、dateを11pxの独立行として表示する。
 - **State:** 選択行はselection面とaccentのcommit dotで示し、load-moreはsurfaceと細い境界線で置く。
+- **Navigation:** コミット閲覧中は、固定見出し行にCommits、Back to HEAD、件数の順で表示する。復帰操作は現在のHEADを読み直し、コミットの選択を解除して作業ツリーの表示へ戻る。閲覧中のhashはフッターに表示する。
 
 ### Controls and states
 
