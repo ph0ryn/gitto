@@ -73,7 +73,6 @@
               pkgs.nodejs_24
               pkgs.pkg-config
               pkgs.pnpm
-              pkgs.rumdl
               pkgs.rustc
               pkgs.rustfmt
             ];
