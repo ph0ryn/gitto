@@ -2,21 +2,16 @@
   description = "A read-only local Git browser";
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
-  # Unstable no longer evaluates x86_64-darwin; retain the four-system output
-  # with the last Darwin release that supports it.
-  inputs.nixpkgs-x86_64-darwin.url = "github:NixOS/nixpkgs/nixpkgs-26.05-darwin";
 
   outputs =
     {
       self,
       nixpkgs,
-      nixpkgs-x86_64-darwin,
     }:
     let
       systems = [
         "x86_64-linux"
         "aarch64-linux"
-        "x86_64-darwin"
         "aarch64-darwin"
       ];
       forEachSystem = nixpkgs.lib.genAttrs systems;
@@ -25,10 +20,8 @@
       packages = forEachSystem (
         system:
         let
-          pkgs = import (if system == "x86_64-darwin" then nixpkgs-x86_64-darwin else nixpkgs) {
+          pkgs = import nixpkgs {
             inherit system;
-            config.allowUnsupportedSystem = true;
-            config.allowDeprecatedx86_64Darwin = "force";
           };
           frontend = import ./nix/frontend.nix {
             inherit pkgs;
@@ -63,10 +56,8 @@
       devShells = forEachSystem (
         system:
         let
-          pkgs = import (if system == "x86_64-darwin" then nixpkgs-x86_64-darwin else nixpkgs) {
+          pkgs = import nixpkgs {
             inherit system;
-            config.allowUnsupportedSystem = true;
-            config.allowDeprecatedx86_64Darwin = "force";
           };
           gitto = self.packages.${system}.gitto;
         in
@@ -93,10 +84,8 @@
       checks = forEachSystem (
         system:
         let
-          pkgs = import (if system == "x86_64-darwin" then nixpkgs-x86_64-darwin else nixpkgs) {
+          pkgs = import nixpkgs {
             inherit system;
-            config.allowUnsupportedSystem = true;
-            config.allowDeprecatedx86_64Darwin = "force";
           };
           frontend = self.packages.${system}.frontend;
           gitto = self.packages.${system}.gitto;
