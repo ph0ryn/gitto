@@ -141,11 +141,14 @@ async function loadFile(
   return data;
 }
 
-function formatDate(seconds: number) {
+function formatDateTime(seconds: number) {
   return new Intl.DateTimeFormat("en-US", {
     year: "numeric",
     month: "short",
     day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
   }).format(new Date(seconds * 1000));
 }
 
@@ -792,7 +795,7 @@ export default function App() {
                       </small>
                     </span>
                     <time dateTime={new Date(commit.time * 1000).toISOString()}>
-                      {formatDate(commit.time)}
+                      {formatDateTime(commit.time)}
                     </time>
                   </button>
                 ))}

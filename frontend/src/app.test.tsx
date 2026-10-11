@@ -138,6 +138,23 @@ afterEach(() => {
 });
 
 describe("App", () => {
+  it.each([
+    { hour: 0, time: "00:05" },
+    { hour: 14, time: "14:05" },
+  ])("shows the commit date with the local 24-hour time ($time)", async ({ hour, time }) => {
+    installFetch({
+      commitData: {
+        ...commits,
+        commits: [{ ...commits.commits[0], time: new Date(2026, 9, 12, hour, 5).getTime() / 1000 }],
+      },
+    });
+    render(<App />);
+
+    const history = await screen.findByRole("complementary", { name: "Commit history" });
+    const commit = within(history).getByRole("button", { name: /最初のコミット/ });
+    expect(commit.querySelector("time")?.textContent).toBe(`Oct 12, 2026, ${time}`);
+  });
+
   it("automatically updates history, branches, changes, files, and the open file", async () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     const options = {
