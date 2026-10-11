@@ -479,39 +479,37 @@ export default function App() {
           </div>
         </aside>
         <section className="viewer-column" aria-label="Repository content" aria-busy={busy}>
-          <div className="viewer-tabs">
+          <header className="viewer-heading">
             {hasView && (
-              <div className="viewer-tab is-active">
+              <>
                 {fileView && <EntryIcon kind="blob" />}
                 <h2 title={viewLabel}>{viewLabel.slice(viewLabel.lastIndexOf("/") + 1)}</h2>
-                {hasView && (
-                  <button
-                    className="icon-button close-button"
-                    aria-label="Close view"
-                    title="Close view"
-                    disabled={busy}
-                    onClick={() => {
-                      setFileView(null);
-                      setDiffView(null);
-                      setSelectedChange(null);
-                      setViewLabel("Select a file");
-                    }}
+                <button
+                  className="icon-button"
+                  aria-label="Close view"
+                  title="Close view"
+                  disabled={busy}
+                  onClick={() => {
+                    setFileView(null);
+                    setDiffView(null);
+                    setSelectedChange(null);
+                    setViewLabel("Select a file");
+                  }}
+                >
+                  <svg
+                    className="ui-icon"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                    aria-hidden="true"
                   >
-                    <svg
-                      className="ui-icon"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.5"
-                      aria-hidden="true"
-                    >
-                      <path d="m7 7 10 10M7 17 17 7" />
-                    </svg>
-                  </button>
-                )}
-              </div>
+                    <path d="m7 7 10 10M7 17 17 7" />
+                  </svg>
+                </button>
+              </>
             )}
-          </div>
+          </header>
           {error && (
             <div className="inline-error" role="alert">
               {error}

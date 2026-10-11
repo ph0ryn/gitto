@@ -100,7 +100,7 @@ select:focus-visible {
   scrollbar-gutter: stable;
 }
 .column-heading,
-.viewer-tabs {
+.viewer-heading {
   display: flex;
   align-items: center;
   flex: 0 0 44px;
@@ -368,24 +368,14 @@ summary.tree-row::-webkit-details-marker {
   font-size: 10px;
   white-space: nowrap;
 }
-.viewer-tabs {
-  background: var(--sidebar);
-}
-.viewer-tab {
-  display: flex;
-  align-items: center;
-  align-self: stretch;
-  max-width: 100%;
+.viewer-heading {
   gap: 8px;
-  padding: 0 12px 0 16px;
-  border-right: 1px solid var(--line);
-  color: var(--muted);
-}
-.viewer-tab.is-active {
+  padding: 0 14px;
   background: var(--surface);
-  color: var(--ink);
 }
-.viewer-tab h2 {
+.viewer-heading h2 {
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

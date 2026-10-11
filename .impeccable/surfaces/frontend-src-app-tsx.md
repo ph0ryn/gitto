@@ -19,6 +19,6 @@ STORY: Choose a branch on the left, expand folders in place, open a file, then i
 
 FIRST VIEWPORT: Four fixed columns: 200px files, a flexible preview of at least 300px, 280px changes, and 230px history. 44px headings, 24px tree rows, and independently scrolling bodies. A 28px footer spans the viewport and shows the repository path and HEAD or commit position. Branch names appear only in the selector. The document never scrolls vertically. Only the workspace pans horizontally on narrow screens. Content growth never moves pane boundaries.
 
-FORM: The user-pinned editor workspace overrides direction seed 8cc9b346. The supplied wireframe is the composition reference. Signature interaction: a file selection replaces one closable preview tab without moving any column. No tab is shown before an item is opened.
+FORM: The user-pinned editor workspace overrides direction seed 8cc9b346. The supplied wireframe is the composition reference. Signature interaction: a file selection replaces the contents of one viewer without moving any column. Its fixed, full-width heading shows the item name and a close button at the right edge. Before an item is opened, the heading remains empty.
 
 FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, DESIGN.md, and every shipping raster carrying its provenance

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-10-11T15:17:56.172636Z",
+  "generatedAt": "2026-10-11T15:25:56.660716Z",
   "title": "Design System: gitto",
   "extensions": {
     "colorMeta": {
@@ -62,11 +62,11 @@
       "css": ".ds-row{width:200px;min-height:24px;padding:2px 8px;border:0;background:var(--selection);color:var(--muted);text-align:left;font:12px/1.6 ui-monospace,monospace;cursor:pointer}.ds-row:hover{background:#edf0f3}.ds-row:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}"
     },
     {
-      "name": "本文のタブ",
+      "name": "本文のヘッダー",
       "kind": "custom",
-      "description": "開いている項目だけにタブを表示する。",
-      "html": "<div class=\"ds-tab\">README.md<button aria-label=\"Close view\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\"><path d=\"m7 7 10 10M7 17 17 7\"/></svg></button></div>",
-      "css": ".ds-tab{display:inline-flex;align-items:center;height:44px;gap:8px;padding:0 12px 0 16px;border-right:1px solid var(--line);background:var(--surface);color:var(--ink);font:600 12px system-ui}.ds-tab button{display:flex;align-items:center;justify-content:center;width:28px;height:28px;padding:0;border:0;border-radius:3px;background:transparent;color:var(--muted);cursor:pointer}.ds-tab button:hover{background:#e8ecf0}.ds-tab button:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}"
+      "description": "単一viewerの全幅に項目名を表示し、右端に閉じるボタンを置く。未選択時は空欄にする。",
+      "html": "<div class=\"ds-viewer-heading\"><span>README.md</span><button aria-label=\"Close view\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\"><path d=\"m7 7 10 10M7 17 17 7\"/></svg></button></div>",
+      "css": ".ds-viewer-heading{display:flex;align-items:center;width:100%;height:44px;gap:8px;padding:0 14px;border-bottom:1px solid var(--line);background:var(--surface);color:var(--ink);font:600 12px system-ui}.ds-viewer-heading button{display:flex;align-items:center;justify-content:center;width:28px;height:28px;padding:0;border:0;border-radius:3px;background:transparent;color:var(--muted);cursor:pointer}.ds-viewer-heading button:hover{background:#e8ecf0}.ds-viewer-heading button:focus-visible{outline:2px solid var(--accent);outline-offset:-2px} .ds-viewer-heading>span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}"
     },
     {
       "name": "展開するフォルダー",
