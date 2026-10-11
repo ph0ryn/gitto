@@ -15,14 +15,9 @@
         "aarch64-darwin"
       ];
       forEachSystem = nixpkgs.lib.genAttrs systems;
-    in
-    {
-      packages = forEachSystem (
-        system:
+      mkPackages =
+        pkgs:
         let
-          pkgs = import nixpkgs {
-            inherit system;
-          };
           frontend = import ./nix/frontend.nix {
             inherit pkgs;
           };
@@ -33,8 +28,14 @@
         {
           inherit frontend gitto;
           default = gitto;
-        }
-      );
+        };
+    in
+    {
+      overlays.default = final: _prev: {
+        gitto = (mkPackages final).gitto;
+      };
+
+      packages = forEachSystem (system: mkPackages (import nixpkgs { inherit system; }));
 
       apps = forEachSystem (
         system:
@@ -85,6 +86,7 @@
         let
           pkgs = import nixpkgs {
             inherit system;
+            overlays = [ self.overlays.default ];
           };
           frontend = self.packages.${system}.frontend;
           gitto = self.packages.${system}.gitto;
@@ -93,6 +95,9 @@
           };
         in
         checks
+        // {
+          overlay-gitto = pkgs.gitto;
+        }
       );
     };
 }

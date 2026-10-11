@@ -31,6 +31,37 @@ gitto --help
 GitコマンドやNode.jsは、ビルド済みバイナリの実行には必要ありません。
 Nixで生成したバイナリはNix storeに依存するため、別のマシンへ単体コピーする配布には使いません。
 
+## インストール
+
+利用するflakeのinputsにgittoを追加します。
+
+```nix
+inputs.gitto = {
+  url = "github:ph0ryn/gitto";
+  inputs.nixpkgs.follows = "nixpkgs";
+};
+```
+
+NixOS・nix-darwinの設定では、`overlays.default`を追加して`pkgs.gitto`をインストールします。
+まず、`nixosSystem`または`darwinSystem`に渡す引数へ次の設定を追加します。
+
+```nix
+specialArgs = { inherit inputs; };
+```
+
+設定モジュールでは、渡された`inputs`を使います。
+
+```nix
+{ inputs, pkgs, ... }:
+{
+  nixpkgs.overlays = [ inputs.gitto.overlays.default ];
+  environment.systemPackages = [ pkgs.gitto ];
+}
+```
+
+overlayは、利用側のnixpkgsを使ってfrontendとCLIをビルドします。
+対応するsystemは`x86_64-linux`・`aarch64-linux`・`aarch64-darwin`です。
+
 ## 閲覧
 
 - ブランチ・タグを選んで、履歴とファイルツリーを切り替えます。
