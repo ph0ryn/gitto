@@ -5,6 +5,7 @@ let
     root = ../frontend;
     fileset = pkgs.lib.fileset.unions [
       ../frontend/index.html
+      ../frontend/.gitignore
       ../frontend/package.json
       ../frontend/pnpm-lock.yaml
       ../frontend/src
@@ -35,6 +36,7 @@ pkgs.stdenvNoCC.mkDerivation {
 
   buildPhase = ''
     runHook preBuild
+    export VP_PACKAGE_MANAGER="pnpm@${pkgs.pnpm.version}"
     pnpm run build
     runHook postBuild
   '';

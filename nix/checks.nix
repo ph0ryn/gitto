@@ -67,9 +67,6 @@ let
 
   pnpmCheck =
     name: script:
-    let
-      command = if script == "check" then "pnpm exec vp check src" else "pnpm run ${script}";
-    in
     pkgs.stdenvNoCC.mkDerivation {
       pname = "gitto-frontend-${name}";
       version = "0.1.0";
@@ -82,7 +79,8 @@ let
       ];
       buildPhase = ''
         runHook preBuild
-        ${command}
+        export VP_PACKAGE_MANAGER="pnpm@${pkgs.pnpm.version}"
+        pnpm run ${script}
         runHook postBuild
       '';
       installPhase = ''
