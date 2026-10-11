@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import FileTree, { EntryIcon, mergeLocalEntries, type TreeEntry } from "./fileTree";
 import CodeViewer from "./codeViewer";
+import DiffViewer, { type DiffFile, type DiffView } from "./diffViewer";
 import { lineChanges, type LineChange } from "./diffLines";
 import ChangeTree, {
   buildChangeTree,
@@ -47,15 +48,6 @@ type FileView = {
   changesTruncated?: boolean;
   removed?: boolean;
 };
-type DiffFile = {
-  path: string;
-  oldPath: string | null;
-  status: string;
-  additions: number;
-  deletions: number;
-  binary: boolean;
-};
-type DiffView = { patch: string; files: DiffFile[]; truncated: boolean };
 type ChangeSource = ChangeEntry["source"];
 
 const EMPTY_STATUS: Status = {
@@ -738,53 +730,5 @@ function FileViewer({ file }: { file: FileView }) {
       )}
       <CodeViewer content={file.content} path={file.path} changes={file.changes} />
     </>
-  );
-}
-
-function DiffViewer({ view }: { view: DiffView }) {
-  const specialFiles = view.files.filter(
-    (file) =>
-      file.binary || file.status.includes("submodule") || file.status.includes("conflicted"),
-  );
-  return (
-    <div className="diff-view">
-      <div className="diff-summary">
-        {view.files.length} {view.files.length === 1 ? "file" : "files"}{" "}
-        <span className="diff-add">
-          +{view.files.reduce((sum, file) => sum + file.additions, 0)}
-        </span>{" "}
-        <span className="diff-del">
-          −{view.files.reduce((sum, file) => sum + file.deletions, 0)}
-        </span>
-        {view.truncated && <span className="diff-truncated">Truncated</span>}
-      </div>
-      {specialFiles.length > 0 && (
-        <ul className="diff-file-list">
-          {specialFiles.map((file) => {
-            const submodule = file.status.includes("submodule");
-            const conflicted = file.status.includes("conflicted");
-            return (
-              <li key={file.path}>
-                <span>{file.path}</span>
-                <small>
-                  {submodule
-                    ? "Submodule conflict"
-                    : conflicted
-                      ? "Conflict (ours → working tree)"
-                      : "Binary diff"}
-                </small>
-              </li>
-            );
-          })}
-        </ul>
-      )}
-      {view.patch ? (
-        <CodeViewer content={view.patch} path="" diff showFileNames={view.files.length > 1} />
-      ) : (
-        <pre className="patch-view">
-          <code>{specialFiles.length > 0 ? "" : "No diff."}</code>
-        </pre>
-      )}
-    </div>
   );
 }

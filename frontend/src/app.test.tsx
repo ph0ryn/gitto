@@ -136,6 +136,40 @@ afterEach(() => {
 });
 
 describe("App", () => {
+  it("shows a single-column diff with source syntax and separate change gutters", async () => {
+    installFetch({
+      diffData: {
+        patch:
+          'diff --git a/main.ts b/main.ts\nindex 123..456 100644\n--- a/main.ts\n+++ b/main.ts\n@@ -4 +4 @@\n-const value = "old";\n+const value = "new";\n',
+        files: [
+          {
+            path: "main.ts",
+            oldPath: null,
+            status: "modified",
+            additions: 1,
+            deletions: 1,
+            binary: false,
+          },
+        ],
+        truncated: false,
+      },
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(await screen.findByRole("button", { name: /最初のコミット/ }));
+
+    const diff = await screen.findByRole("table", { name: "main.ts diff" });
+    const deleted = within(diff).getByRole("row", { name: /Deleted line 4/ });
+    const added = within(diff).getByRole("row", { name: /Added line 4/ });
+    expect(deleted.querySelector("code")?.textContent).toBe('const value = "old";');
+    expect(added.querySelector("code")?.textContent).toBe('const value = "new";');
+    expect(added.querySelector(".hljs-keyword")).toHaveTextContent("const");
+    expect(within(diff).getAllByRole("columnheader", { name: "Code" })).toHaveLength(1);
+    expect(diff).not.toHaveTextContent("@@");
+    expect(diff).not.toHaveTextContent("diff --git");
+    expect(diff).not.toHaveTextContent("index 123");
+  });
+
   it("highlights source files and shows line numbers without changing the source text", async () => {
     const content = 'const message = "hello";\n\nconsole.log(message);\n';
     installFetch({
@@ -647,11 +681,10 @@ describe("App", () => {
     expect(await screen.findByText("# gitto")).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: /最初のコミット/ }));
-    await waitFor(() =>
-      expect(document.querySelector(".patch-view")).toHaveTextContent("@@ -1 +1 @@"),
-    );
-    expect(document.querySelectorAll(".patch-view .line-numbers span")).toHaveLength(2);
-    expect(document.querySelector(".patch-view .hljs-addition")).toHaveTextContent("+new");
+    await waitFor(() => expect(document.querySelector(".diff-table")).toHaveTextContent("new"));
+    expect(document.querySelector(".diff-old.deleted")).toHaveTextContent("1");
+    expect(document.querySelector(".diff-new.added")).toHaveTextContent("1");
+    expect(document.querySelector(".diff-sign.added")).toHaveTextContent("+");
     expect(
       within(screen.getByLabelText("Repository path")).getByText("Commit abc12345"),
     ).toBeInTheDocument();
@@ -663,11 +696,11 @@ describe("App", () => {
     render(<App />);
 
     await user.click(await screen.findByRole("button", { name: /最初のコミット/ }));
-    await waitFor(() => expect(document.querySelector(".patch-view")).toBeInTheDocument());
+    await waitFor(() => expect(document.querySelector(".diff-table")).toBeInTheDocument());
     expect(screen.getByLabelText("Branch")).toHaveValue("abc123456789");
     await user.selectOptions(screen.getByLabelText("Branch"), "refs/heads/main");
 
-    await waitFor(() => expect(document.querySelector(".patch-view")).not.toBeInTheDocument());
+    await waitFor(() => expect(document.querySelector(".diff-table")).not.toBeInTheDocument());
     expect(screen.getByLabelText("Branch")).toHaveValue("refs/heads/main");
     expect(fetchMock).toHaveBeenCalledWith("/api/tree?revision=refs%2Fheads%2Fmain&path=");
   });
@@ -781,9 +814,7 @@ describe("App", () => {
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/diff?source=staged&revision=HEAD&path=src%2Fmain.ts",
     );
-    await waitFor(() =>
-      expect(document.querySelector(".patch-view")).toHaveTextContent("@@ -1 +1 @@"),
-    );
+    await waitFor(() => expect(document.querySelector(".diff-table")).toHaveTextContent("new"));
   });
 
   it("opens unstaged changes as a diff", async () => {
