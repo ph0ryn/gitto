@@ -155,6 +155,228 @@ describe("App", () => {
     expect(commit.querySelector("time")?.textContent).toBe(`Oct 12, 2026, ${time}`);
   });
 
+  it.each([
+    { initial: "file", next: "file" },
+    { initial: "file", next: "diff" },
+    { initial: "diff", next: "file" },
+    { initial: "diff", next: "diff" },
+  ])(
+    "keeps the $initial preview and navigation unchanged while opening a $next",
+    async ({ initial, next }) => {
+      const fetchMock = installFetch({
+        trees: {
+          "": [...tree.entries, { name: "next.ts", path: "next.ts", kind: "blob", size: 7 }],
+        },
+        statusData: {
+          ...status,
+          unstaged: [{ path: "src/next.ts", oldPath: null, status: "modified" }],
+        },
+      });
+      const user = userEvent.setup();
+      render(<App />);
+      const files = await screen.findByRole("complementary", { name: "File tree" });
+      const changes = screen.getByRole("complementary", { name: "Changed files" });
+      const history = screen.getByRole("complementary", { name: "Commit history" });
+      const content = screen.getByRole("region", { name: "Repository content" });
+      const initialPath = initial === "file" ? "README.md" : "src/main.ts";
+      await user.click(
+        screen.getByRole("button", {
+          name: initial === "file" ? "README.md" : "src/main.ts diff (Staged · modified)",
+        }),
+      );
+      await within(content).findByRole("heading", { name: initialPath });
+      const preview = content.querySelector(initial === "file" ? ".code-view" : ".diff-view");
+      let resolvePreview!: (value: Response) => void;
+      fetchMock.mockImplementationOnce(
+        () =>
+          new Promise<Response>((resolve) => {
+            resolvePreview = resolve;
+          }),
+      );
+      const mutations: MutationRecord[] = [];
+      const observer = new MutationObserver((records) => mutations.push(...records));
+      for (const navigation of [files, changes, history]) {
+        observer.observe(navigation, {
+          subtree: true,
+          attributes: true,
+          childList: true,
+          characterData: true,
+        });
+      }
+      await user.click(
+        screen.getByRole("button", {
+          name: next === "file" ? "next.ts" : "src/next.ts diff (Unstaged · modified)",
+        }),
+      );
+
+      expect(content).toHaveAttribute("aria-busy", "true");
+      expect(preview).toBeInTheDocument();
+      expect(within(content).getByRole("heading", { name: initialPath })).toBeVisible();
+      expect(within(content).queryByText("Loading…")).not.toBeInTheDocument();
+      expect(screen.getByLabelText("Branch")).toBeEnabled();
+      expect(mutations).toHaveLength(0);
+      observer.disconnect();
+
+      await act(async () => {
+        resolvePreview(
+          await response(
+            next === "file"
+              ? { path: "next.ts", kind: "text", content: "next\n", size: 5 }
+              : { patch: "@@ -1 +1 @@\n-old\n+next", files: [], truncated: false },
+          ),
+        );
+      });
+      expect(
+        within(content).getByRole("heading", {
+          name: next === "file" ? "next.ts" : "src/next.ts",
+        }),
+      ).toBeVisible();
+      expect(content).toHaveAttribute("aria-busy", "false");
+      expect(
+        content.querySelector(next === "file" ? ".code-view" : ".diff-view"),
+      ).toHaveTextContent("next");
+    },
+  );
+
+  it.each(["file", "diff"])(
+    "keeps the current preview and reports a failed %s request",
+    async (next) => {
+      const fetchMock = installFetch();
+      const user = userEvent.setup();
+      render(<App />);
+      const file = await screen.findByRole("button", { name: "README.md" });
+      await user.click(file);
+      await screen.findByText("# gitto");
+      const preview = document.querySelector(".code-view");
+      fetchMock.mockImplementationOnce(() => response({ error: "Preview unavailable" }, 500));
+      await user.click(
+        next === "file"
+          ? file
+          : screen.getByRole("button", {
+              name: "src/main.ts diff (Staged · modified)",
+            }),
+      );
+
+      expect(await screen.findByRole("alert")).toHaveTextContent("Preview unavailable");
+      expect(preview).toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: "README.md" })).toBeVisible();
+      expect(file).toHaveClass("is-selected");
+      expect(screen.getByRole("region", { name: "Repository content" })).toHaveAttribute(
+        "aria-busy",
+        "false",
+      );
+    },
+  );
+
+  it.each([
+    { first: "file", action: "diff", fails: false },
+    { first: "diff", action: "file", fails: true },
+    { first: "file", action: "close", fails: false },
+    { first: "diff", action: "commit", fails: false },
+    { first: "file", action: "branch", fails: true },
+  ])(
+    "ignores an obsolete $first request after $action (fails: $fails)",
+    async ({ first, action, fails }) => {
+      const fetchMock = installFetch({
+        repoData: {
+          ...repo,
+          branches: [...repo.branches, { name: "other", revision: "refs/heads/other" }],
+        },
+        trees: {
+          "": [...tree.entries, { name: "next.ts", path: "next.ts", kind: "blob", size: 7 }],
+        },
+      });
+      const user = userEvent.setup();
+      render(<App />);
+      await user.click(await screen.findByRole("button", { name: "README.md" }));
+      await screen.findByText("# gitto");
+      let resolvePreview!: (value: Response) => void;
+      fetchMock.mockImplementationOnce(
+        () =>
+          new Promise<Response>((resolve) => {
+            resolvePreview = resolve;
+          }),
+      );
+      const file = screen.getByRole("button", { name: "next.ts" });
+      const diff = screen.getByRole("button", { name: "src/main.ts diff (Staged · modified)" });
+      await user.click(first === "file" ? file : diff);
+      const signal = fetchMock.mock.lastCall?.[1]?.signal;
+      switch (action) {
+        case "file":
+          await user.click(file);
+          await screen.findByRole("heading", { name: "next.ts" });
+          break;
+        case "diff":
+          await user.click(diff);
+          await screen.findByRole("heading", { name: "src/main.ts" });
+          break;
+        case "close":
+          await user.click(screen.getByRole("button", { name: "Close view" }));
+          break;
+        case "commit":
+          await user.click(screen.getByRole("button", { name: /最初のコミット/ }));
+          await screen.findByRole("heading", { name: "abc1234 changes" });
+          break;
+        case "branch":
+          await user.selectOptions(screen.getByLabelText("Branch"), "refs/heads/other");
+          await waitFor(() =>
+            expect(screen.getByLabelText("Branch")).toHaveValue("refs/heads/other"),
+          );
+          break;
+      }
+      const content = screen.getByRole("region", { name: "Repository content" });
+      const snapshot = content.innerHTML;
+      expect(signal?.aborted).toBe(true);
+      await act(async () => {
+        resolvePreview(
+          await response(
+            fails
+              ? { error: "Obsolete failure" }
+              : first === "file"
+                ? { path: "next.ts", kind: "text", content: "obsolete\n", size: 9 }
+                : { patch: "@@ -1 +1 @@\n-old\n+obsolete", files: [], truncated: false },
+            fails ? 500 : 200,
+          ),
+        );
+      });
+
+      expect(content.innerHTML).toBe(snapshot);
+      expect(content).toHaveAttribute("aria-busy", "false");
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    },
+  );
+
+  it("does not restore a closed file when a polling preview finishes in the same update", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const fetchMock = installFetch();
+    await act(async () => {
+      render(<App />);
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "README.md" }));
+    });
+    const originalFetch = fetchMock.getMockImplementation()!;
+    let resolveDiff!: (value: Response) => void;
+    const pendingDiff = new Promise<Response>((resolve) => {
+      resolveDiff = resolve;
+    });
+    fetchMock.mockImplementation((input, init) =>
+      typeof input === "string" && input.startsWith("/api/diff?source=worktree")
+        ? pendingDiff
+        : originalFetch(input, init),
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000);
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Close view" }));
+      resolveDiff(await response({ patch: "", files: [], truncated: false }));
+    });
+
+    expect(screen.queryByText("# gitto")).not.toBeInTheDocument();
+    expect(screen.getByText("Open a file")).toBeVisible();
+  });
+
   it("automatically updates history, branches, changes, files, and the open file", async () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     const options = {
@@ -591,8 +813,12 @@ describe("App", () => {
     await user.click(await screen.findByRole("button", { name: "main.ts" }));
 
     expect(await screen.findByRole("img", { name: "Modified line 1" })).toBeInTheDocument();
-    expect(fetchMock).toHaveBeenCalledWith("/api/file?source=worktree&revision=HEAD&path=main.ts");
-    expect(fetchMock).toHaveBeenCalledWith("/api/diff?source=worktree&revision=HEAD&path=main.ts");
+    expect(fetchMock).toHaveBeenCalledWith("/api/file?source=worktree&revision=HEAD&path=main.ts", {
+      signal: expect.any(AbortSignal),
+    });
+    expect(fetchMock).toHaveBeenCalledWith("/api/diff?source=worktree&revision=HEAD&path=main.ts", {
+      signal: expect.any(AbortSignal),
+    });
   });
 
   it("keeps explicitly removed files visible with deletion markers", async () => {
@@ -610,7 +836,9 @@ describe("App", () => {
     await user.click(await screen.findByRole("button", { name: "main.ts" }));
     expect(await screen.findByRole("img", { name: "Deleted line 1" })).toBeInTheDocument();
     expect(screen.getByText("Removed from working tree")).toBeInTheDocument();
-    expect(fetchMock).toHaveBeenCalledWith("/api/file?source=commit&revision=HEAD&path=main.ts");
+    expect(fetchMock).toHaveBeenCalledWith("/api/file?source=commit&revision=HEAD&path=main.ts", {
+      signal: expect.any(AbortSignal),
+    });
   });
 
   it("opens an untracked directory that replaced a committed file", async () => {
@@ -663,6 +891,7 @@ describe("App", () => {
     expect(await screen.findByText("# gitto")).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/file?source=worktree&revision=HEAD&path=notes%2Fdeep%2Fnew.md",
+      { signal: expect.any(AbortSignal) },
     );
     expect(
       fetchMock.mock.calls.some(
@@ -720,6 +949,7 @@ describe("App", () => {
     expect(screen.getByText("# gitto")).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/file?source=worktree&revision=HEAD&path=src%2Fnew.ts",
+      { signal: expect.any(AbortSignal) },
     );
   });
 
@@ -906,9 +1136,11 @@ describe("App", () => {
     expect(staged).toHaveAttribute("aria-pressed", "false");
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/diff?source=staged&revision=HEAD&path=src%2Fmain.ts",
+      { signal: expect.any(AbortSignal) },
     );
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/diff?source=unstaged&revision=HEAD&path=src%2Fmain.ts",
+      { signal: expect.any(AbortSignal) },
     );
   });
 
@@ -1234,6 +1466,7 @@ describe("App", () => {
     await waitFor(() => expect(renamed).toHaveAttribute("aria-pressed", "true"));
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/diff?source=commit&revision=abc123456789&path=history%2Fnew.ts",
+      { signal: expect.any(AbortSignal) },
     );
     await user.click(screen.getByRole("button", { name: "README.md" }));
     expect(await screen.findByText("# gitto")).toBeInTheDocument();
@@ -1287,6 +1520,7 @@ describe("App", () => {
 
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/diff?source=staged&revision=HEAD&path=src%2Fmain.ts",
+      { signal: expect.any(AbortSignal) },
     );
     await waitFor(() => expect(document.querySelector(".diff-table")).toHaveTextContent("new"));
   });
@@ -1308,6 +1542,7 @@ describe("App", () => {
 
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/diff?source=unstaged&revision=HEAD&path=src%2Fmain.ts",
+      { signal: expect.any(AbortSignal) },
     );
   });
 
@@ -1325,6 +1560,7 @@ describe("App", () => {
     );
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/diff?source=staged&revision=HEAD&path=src%2Fmain.ts",
+      { signal: expect.any(AbortSignal) },
     );
     expect(screen.queryByRole("button", { name: "Content" })).not.toBeInTheDocument();
   });

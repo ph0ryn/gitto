@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import FileTree, { EntryIcon, mergeLocalEntries, type TreeEntry } from "./fileTree";
 import CodeViewer from "./codeViewer";
 import DiffViewer, { type DiffFile, type DiffView } from "./diffViewer";
@@ -187,6 +187,8 @@ export default function App() {
   const [viewLabel, setViewLabel] = useState("Select a file");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const previewRequest = useRef<AbortController | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const loadWorkspace = useCallback(async () => {
@@ -232,13 +234,14 @@ export default function App() {
 
   useEffect(() => {
     void loadWorkspace();
+    return () => previewRequest.current?.abort();
   }, [loadWorkspace]);
 
   useEffect(() => {
     if (repo) document.title = `${repo.name} | gitto`;
   }, [repo]);
 
-  const ready = Boolean(repo) && !loading && !busy;
+  const ready = Boolean(repo) && !loading && !busy && !previewLoading;
   const openFilePath = fileView?.path;
   useEffect(() => {
     if (!ready) return;
@@ -375,7 +378,23 @@ export default function App() {
     [revision],
   );
 
+  function cancelPreview() {
+    previewRequest.current?.abort();
+    previewRequest.current = null;
+    setPreviewLoading(false);
+  }
+
+  function startPreview() {
+    cancelPreview();
+    const controller = new AbortController();
+    previewRequest.current = controller;
+    setPreviewLoading(true);
+    setError(null);
+    return controller.signal;
+  }
+
   async function chooseCommit(commit: Commit) {
+    cancelPreview();
     setBusy(true);
     setError(null);
     setFileView(null);
@@ -410,6 +429,7 @@ export default function App() {
   }
 
   async function chooseBranch(branch: Branch) {
+    cancelPreview();
     setBusy(true);
     setError(null);
     setFileView(null);
@@ -446,6 +466,7 @@ export default function App() {
   }
 
   async function chooseHead() {
+    cancelPreview();
     setBusy(true);
     setError(null);
     setFileView(null);
@@ -480,44 +501,48 @@ export default function App() {
   }
 
   async function openEntry(entry: TreeEntry) {
-    setBusy(true);
-    setError(null);
-    setDiffView(null);
-    setFileView(null);
-    setSelectedChange(null);
-    setViewLabel("Loading…");
+    const signal = startPreview();
     try {
-      const data = await loadFile(entry, revision, status, viewingHead && !repo?.bare);
+      const data = await loadFile(entry, revision, status, viewingHead && !repo?.bare, signal);
+      if (signal.aborted) return;
       setFileView(data);
+      setDiffView(null);
+      setSelectedChange(null);
       setFileEntry(entry);
       setViewLabel(entry.path);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Could not load the file.");
-      setViewLabel("Select a file");
+      if (!signal.aborted) {
+        setError(reason instanceof Error ? reason.message : "Could not load the file.");
+      }
     } finally {
-      setBusy(false);
+      if (!signal.aborted) {
+        previewRequest.current = null;
+        setPreviewLoading(false);
+      }
     }
   }
 
   async function openChange(source: ChangeSource, entry: StatusEntry) {
-    setBusy(true);
-    setError(null);
-    setFileView(null);
-    setDiffView(null);
-    setSelectedChange(null);
-    setViewLabel("Loading…");
+    const signal = startPreview();
     try {
       const data = await api<DiffView>(
         `/api/diff?source=${source}&revision=${encodeURIComponent(revision)}&path=${encodeURIComponent(entry.path)}`,
+        signal,
       );
+      if (signal.aborted) return;
       setDiffView(data);
+      setFileView(null);
       setSelectedChange(changeKey({ ...entry, source }));
       setViewLabel(entry.path);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Could not load the diff.");
-      setViewLabel("Select a file");
+      if (!signal.aborted) {
+        setError(reason instanceof Error ? reason.message : "Could not load the diff.");
+      }
     } finally {
-      setBusy(false);
+      if (!signal.aborted) {
+        previewRequest.current = null;
+        setPreviewLoading(false);
+      }
     }
   }
 
@@ -668,7 +693,11 @@ export default function App() {
             )}
           </div>
         </aside>
-        <section className="viewer-column" aria-label="Repository content" aria-busy={busy}>
+        <section
+          className="viewer-column"
+          aria-label="Repository content"
+          aria-busy={busy || previewLoading}
+        >
           <header className="viewer-heading">
             {hasView && (
               <>
@@ -687,6 +716,7 @@ export default function App() {
                   title="Close view"
                   disabled={busy}
                   onClick={() => {
+                    cancelPreview();
                     setFileView(null);
                     setDiffView(null);
                     setSelectedChange(null);
@@ -713,12 +743,12 @@ export default function App() {
             </div>
           )}
           <div className="pane-scroll viewer-content">
-            {busy ? (
-              <div className="viewer-loading">Loading…</div>
-            ) : diffView ? (
+            {diffView ? (
               <DiffViewer view={diffView} />
             ) : fileView ? (
               <FileViewer file={fileView} />
+            ) : busy || previewLoading ? (
+              <div className="viewer-loading">Loading…</div>
             ) : (
               <EmptyState
                 title="Open a file"
