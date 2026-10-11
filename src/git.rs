@@ -29,6 +29,7 @@ pub enum Error {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RepoInfo {
+    app_version: &'static str,
     name: String,
     path: String,
     head: Option<String>,
@@ -191,6 +192,7 @@ pub fn info(repo: &Repository) -> Result<RepoInfo, Error> {
     }
     branches.sort_by(|a, b| a.name.cmp(&b.name));
     Ok(RepoInfo {
+        app_version: env!("CARGO_PKG_VERSION"),
         name: name
             .to_str()
             .ok_or_else(|| Error::Unsupported("Repository name is not UTF-8".into()))?

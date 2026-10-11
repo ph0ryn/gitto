@@ -9,10 +9,10 @@ import ChangeTree, {
   changeKey,
   type ChangeEntry,
 } from "./changeTree";
-import { version } from "../package.json";
 
 type Branch = { name: string; revision: string };
 type Repo = {
+  appVersion: string;
   name: string;
   path: string;
   head: string | null;
@@ -867,7 +867,7 @@ export default function App() {
         <span className="footer-brand">
           <strong>Gitto</strong>
           <span>A read-only local Git browser</span>
-          <span>v{version}</span>
+          <span>v{repo?.appVersion}</span>
         </span>
       </footer>
     </main>

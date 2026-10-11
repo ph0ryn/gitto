@@ -154,7 +154,7 @@ CLI・HTTP・ブラウザーの連携は、起動後に手動で確認します�
 
 | パス | 内容 |
 | --- | --- |
-| `/api/repo` | 名前、パス、HEAD、bare状態、ローカル・remoteブランチとタグ |
+| `/api/repo` | Gittoのバージョン、名前、パス、HEAD、bare状態、ローカル・remoteブランチとタグ |
 | `/api/commits?revision=HEAD&offset=0&limit=50` | 履歴。`limit`は1〜100 |
 | `/api/tree?revision=HEAD&path=src` | 指定ディレクトリのエントリー |
 | `/api/file?source=commit&revision=HEAD&path=README.md` | ファイル。`source`は`commit`、`index`、`worktree` |

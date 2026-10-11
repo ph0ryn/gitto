@@ -4,9 +4,9 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import App from "./app";
 import type { TreeEntry } from "./fileTree";
-import { version } from "../package.json";
 
 const repo = {
+  appVersion: "9.8.7",
   name: "sample-repo",
   path: "/tmp/sample-repo",
   head: "main",
@@ -1219,7 +1219,7 @@ describe("App", () => {
       within(footer).getByText("7 B"),
       within(footer).getByText("Gitto"),
       within(footer).getByText("A read-only local Git browser"),
-      within(footer).getByText(`v${version}`),
+      within(footer).getByText(`v${repo.appVersion}`),
     ];
     for (let index = 1; index < details.length; index++) {
       expect(
