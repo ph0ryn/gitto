@@ -37,6 +37,8 @@ Nixで生成したバイナリはNix storeに依存するため、別のマシ�
 - コミットを選ぶと、その時点のツリーと最初の親コミットとの差分を表示します。
   最初のコミットは空のツリーと比較します。
 - フォルダーとファイルを選ぶと、内容を表示します。シンボリックリンクはリンク先の文字列を表示します。
+- ファイルと差分に構文ハイライトと行番号を表示します。通常のファイルでは追加・変更・削除位置を行番号の横に示します。
+  作業中はHEADと作業ツリー、履歴では第1親と選択コミットを比較します。
 - 変更一覧では、HEADとindexの差分をStaged、indexと作業ツリーの差分をUnstagedとして表示します。
   同じファイルに両方の変更がある場合は、それぞれの一覧に表示します。
 - 作業中の変更は「更新」で再取得します。ブランチを閲覧してもcheckoutはしません。
@@ -53,7 +55,8 @@ Gitのパス・メタデータがUTF-8でない場合は、エラーを表示し
 Markdownとコードはテキストとして表示し、HTMLを実行しません。
 
 サーバーはloopbackに限定し、起動時に表示したHost以外のリクエストを拒否します。
-競合の差分はindexのstage 2（ours）と現在の作業ファイルを比較し、競合マーカーも表示します。
+Unstagedの競合差分はindexのstage 2（ours）と現在の作業ファイルを比較し、競合マーカーも表示します。
+通常ファイルの変更マークは、競合中もHEADとの比較を使います。
 frontendはMVPのため、base・ours・theirsを並べる3-way表示はありません。
 
 CORSは許可しません。作業ツリーから`.git`やリポジトリ外のファイルを読み出しません。
@@ -120,6 +123,7 @@ CLI・HTTP・ブラウザーの連携は、起動後に手動で確認します�
 | `/api/tree?revision=HEAD&path=src` | 指定ディレクトリのエントリー |
 | `/api/file?source=commit&revision=HEAD&path=README.md` | ファイル。`source`は`commit`、`index`、`worktree` |
 | `/api/status` | staged、unstaged、untracked、conflictsの一覧 |
-| `/api/diff?source=staged&path=src/main.rs` | 差分。`source`は`staged`、`unstaged`、`untracked`、`commit`。`path`は省略可能 |
+| `/api/diff?source=staged&path=src/main.rs` | 差分。`source`は`staged`、`unstaged`、`untracked`、`worktree`、`commit`。`path`は省略可能 |
 
 `commit`差分では`revision`を指定できます。作業中の差分は常に現在のHEAD・index・作業ツリーを使います。
+`worktree`はHEADから作業ツリーまでの変更をまとめ、未追跡ファイルも含めます。

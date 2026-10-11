@@ -58,6 +58,7 @@ function installFetch(
     diffData?: unknown;
     commitStats?: unknown;
     diffPromise?: Promise<unknown>;
+    fileContent?: string;
     trees?: Record<string, typeof tree.entries>;
     stats?: Record<string, { additions: number; deletions: number; binary?: boolean }>;
   } = {},
@@ -96,7 +97,7 @@ function installFetch(
         return response({
           path: new URL(url, "http://localhost").searchParams.get("path"),
           kind: "text",
-          content: "# gitto\n",
+          content: options.fileContent ?? "# gitto\n",
           size: 7,
         });
       if (url.startsWith("/api/diff")) {
@@ -135,6 +136,57 @@ afterEach(() => {
 });
 
 describe("App", () => {
+  it("highlights source files and shows line numbers without changing the source text", async () => {
+    const content = 'const message = "hello";\n\nconsole.log(message);\n';
+    installFetch({
+      fileContent: content,
+      trees: { "": [{ name: "main.ts", path: "main.ts", kind: "blob", size: content.length }] },
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(await screen.findByRole("button", { name: "main.ts" }));
+    await waitFor(() =>
+      expect(document.querySelector(".code-view code")).toHaveTextContent("hello"),
+    );
+
+    expect(document.querySelector(".code-view code")?.textContent).toBe(content);
+    expect(document.querySelector(".code-view .hljs-keyword")).toHaveTextContent("const");
+    expect(document.querySelector(".line-numbers")).toHaveTextContent("1 2 3");
+    expect(document.querySelector(".line-numbers")).toHaveAttribute("aria-hidden", "true");
+  });
+
+  it("opens working content with changes against HEAD and shows its changed line", async () => {
+    const fetchMock = installFetch({
+      fileContent: "new\n",
+      trees: { "": [{ name: "main.ts", path: "main.ts", kind: "blob", size: 4 }] },
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(await screen.findByRole("button", { name: "main.ts" }));
+
+    expect(await screen.findByRole("img", { name: "Modified line 1" })).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith("/api/file?source=worktree&revision=HEAD&path=main.ts");
+    expect(fetchMock).toHaveBeenCalledWith("/api/diff?source=worktree&revision=HEAD&path=main.ts");
+  });
+
+  it("keeps explicitly removed files visible with deletion markers", async () => {
+    const fetchMock = installFetch({
+      fileContent: "old\n",
+      trees: { "": [{ name: "main.ts", path: "main.ts", kind: "blob", size: 4 }] },
+      statusData: {
+        ...status,
+        staged: [],
+        unstaged: [{ path: "main.ts", oldPath: null, status: "deleted" }],
+      },
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(await screen.findByRole("button", { name: "main.ts" }));
+    expect(await screen.findByRole("img", { name: "Deleted line 1" })).toBeInTheDocument();
+    expect(screen.getByText("Removed from working tree")).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith("/api/file?source=commit&revision=HEAD&path=main.ts");
+  });
+
   it("opens an untracked directory that replaced a committed file", async () => {
     installFetch({
       trees: { "": [{ name: "notes", path: "notes", kind: "blob", size: 12 }] },
@@ -231,7 +283,7 @@ describe("App", () => {
     await user.click(added);
     await screen.findByText("# gitto");
     expect(fetchMock).toHaveBeenCalledWith(
-      "/api/file?source=index&revision=HEAD&path=src%2Fnew.ts",
+      "/api/file?source=worktree&revision=HEAD&path=src%2Fnew.ts",
     );
   });
 
@@ -598,6 +650,8 @@ describe("App", () => {
     await waitFor(() =>
       expect(document.querySelector(".patch-view")).toHaveTextContent("@@ -1 +1 @@"),
     );
+    expect(document.querySelectorAll(".patch-view .line-numbers span")).toHaveLength(2);
+    expect(document.querySelector(".patch-view .hljs-addition")).toHaveTextContent("+new");
     expect(
       within(screen.getByLabelText("Repository path")).getByText("Commit abc12345"),
     ).toBeInTheDocument();

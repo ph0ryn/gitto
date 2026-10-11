@@ -90,6 +90,7 @@ pub enum DiffSource {
     Staged,
     Unstaged,
     Untracked,
+    Worktree,
     Commit,
 }
 
@@ -180,6 +181,21 @@ async fn diff(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn worktree_diff_query_accepts_the_read_only_comparison_source() {
+        let query = Query::<DiffQuery>::try_from_uri(
+            &"/api/diff?source=worktree&path=src%2Fmain.rs"
+                .parse()
+                .unwrap(),
+        )
+        .unwrap()
+        .0;
+        assert!(query.source == DiffSource::Worktree);
+        assert_eq!(query.revision, "HEAD");
+        assert_eq!(query.path.as_deref(), Some("src/main.rs"));
+        assert!(!query.stats_only);
+    }
     use axum::{
         body::Body,
         http::{Request, header},

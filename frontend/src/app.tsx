@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import FileTree, { EntryIcon, mergeLocalEntries, type TreeEntry } from "./fileTree";
+import CodeViewer from "./codeViewer";
+import { lineChanges, type LineChange } from "./diffLines";
 import ChangeTree, {
   buildChangeTree,
   buildChangeDecorations,
@@ -41,6 +43,9 @@ type FileView = {
   kind: "text" | "binary" | "tooLarge" | "submodule";
   content: string | null;
   size: number;
+  changes?: LineChange[];
+  changesTruncated?: boolean;
+  removed?: boolean;
 };
 type DiffFile = {
   path: string;
@@ -289,16 +294,49 @@ export default function App() {
     setSelectedChange(null);
     setViewLabel("Loading…");
     try {
+      const local = viewingHead && !repo?.bare;
       const untracked = status.untracked.some((file) => file.path === entry.path);
-      const source =
-        viewingHead && (entry.local || untracked)
-          ? !untracked && status.staged.some((file) => file.path === entry.path)
-            ? "index"
-            : "worktree"
+      const removed =
+        local &&
+        !untracked &&
+        [...status.staged, ...status.unstaged].some(
+          (file) =>
+            (file.path === entry.path && file.status === "deleted") ||
+            (file.oldPath === entry.path && file.status === "renamed"),
+        );
+      const source = removed
+        ? entry.local && status.staged.some((file) => file.path === entry.path)
+          ? "index"
+          : "commit"
+        : local
+          ? "worktree"
           : "commit";
       const data = await api<FileView>(
         `/api/file?source=${source}&revision=${encodeURIComponent(revision)}&path=${encodeURIComponent(entry.path)}`,
       );
+      if (data.kind === "text") {
+        if (data.content === null) throw new Error("Text content is missing.");
+        const count = Math.max(
+          1,
+          data.content.split("\n").length - Number(data.content.endsWith("\n")),
+        );
+        if (removed) {
+          data.removed = true;
+          data.changes = [
+            {
+              line: 1,
+              endLine: count,
+              kind: "deleted",
+            },
+          ];
+        } else {
+          const diff = await api<DiffView>(
+            `/api/diff?source=${local ? "worktree" : "commit"}&revision=${encodeURIComponent(revision)}&path=${encodeURIComponent(entry.path)}`,
+          );
+          data.changes = lineChanges(diff.patch, count);
+          data.changesTruncated = diff.truncated;
+        }
+      }
       setFileView(data);
       setViewLabel(entry.path);
     } catch (reason) {
@@ -687,10 +725,19 @@ function FileViewer({ file }: { file: FileView }) {
     return (
       <EmptyState title="Submodule" detail="Submodule contents belong to a separate repository." />
     );
+  if (file.content === null) throw new Error("Text content is missing.");
   return (
-    <pre className="code-view">
-      <code>{file.content ?? ""}</code>
-    </pre>
+    <>
+      {(file.removed || file.changesTruncated) && (
+        <div className="diff-summary">
+          {file.removed && <span>Removed from working tree</span>}
+          {file.changesTruncated && (
+            <span className="diff-truncated">Change markers truncated</span>
+          )}
+        </div>
+      )}
+      <CodeViewer content={file.content} path={file.path} changes={file.changes} />
+    </>
   );
 }
 
@@ -731,9 +778,13 @@ function DiffViewer({ view }: { view: DiffView }) {
           })}
         </ul>
       )}
-      <pre className="patch-view">
-        <code>{view.patch || (specialFiles.length > 0 ? "" : "No diff.")}</code>
-      </pre>
+      {view.patch ? (
+        <CodeViewer content={view.patch} path="" diff showFileNames={view.files.length > 1} />
+      ) : (
+        <pre className="patch-view">
+          <code>{specialFiles.length > 0 ? "" : "No diff."}</code>
+        </pre>
+      )}
     </div>
   );
 }

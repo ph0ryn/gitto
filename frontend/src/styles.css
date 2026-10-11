@@ -420,11 +420,64 @@ summary.tree-row::-webkit-details-marker {
   white-space: pre;
 }
 .code-view {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  align-content: start;
   min-height: 100%;
+  min-width: 100%;
+  width: max-content;
+  padding: 0;
+}
+.code-view code {
+  padding: 0 16px;
+  font: inherit;
+}
+.line-gutter {
+  position: sticky;
+  left: 0;
+  user-select: none;
+}
+.line-numbers {
+  display: flex;
+  gap: 12px;
+  padding: 0 12px 0 16px;
+  border-right: 1px solid var(--line);
+  background: var(--sidebar);
+  color: var(--muted);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  min-height: 100%;
+}
+.line-change {
+  position: absolute;
+  left: 0;
+  width: 3px;
+  height: 1lh;
+  background: var(--modified);
+}
+.line-change.added {
+  background: var(--added);
+}
+.line-change.deleted {
+  background: var(--deleted);
+}
+.line-change.boundary {
+  width: 0;
+  height: 0;
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  border-left: 5px solid var(--deleted);
+  background: none;
+  transform: translateY(-4px);
+}
+.code-view .hljs-built_in,
+.code-view .hljs-symbol {
+  color: #953800;
 }
 .diff-summary {
   position: sticky;
   top: 0;
+  z-index: 1;
   display: flex;
   align-items: center;
   gap: 10px;

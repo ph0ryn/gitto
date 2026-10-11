@@ -619,6 +619,19 @@ pub fn diff(repo: &Repository, query: DiffQuery) -> Result<DiffResult, Error> {
                 .transpose()?;
             repo.diff_tree_to_index(head.as_ref(), None, Some(&mut options))?
         }
+        DiffSource::Worktree => {
+            if repo.is_bare() {
+                return Err(Error::NoWorktree);
+            }
+            let head = commit_at(repo, "HEAD")?
+                .map(|commit| commit.tree())
+                .transpose()?;
+            options
+                .include_untracked(true)
+                .recurse_untracked_dirs(true)
+                .show_untracked_content(true);
+            repo.diff_tree_to_workdir_with_index(head.as_ref(), Some(&mut options))?
+        }
         DiffSource::Unstaged | DiffSource::Untracked => {
             if repo.is_bare() {
                 return Err(Error::NoWorktree);
@@ -659,7 +672,7 @@ pub fn diff(repo: &Repository, query: DiffQuery) -> Result<DiffResult, Error> {
             .renames(true)
             .for_untracked(matches!(
                 query.source,
-                DiffSource::Unstaged | DiffSource::Untracked
+                DiffSource::Unstaged | DiffSource::Untracked | DiffSource::Worktree
             )),
     ))?;
     let mut result = DiffResult {
@@ -723,7 +736,7 @@ pub fn diff(repo: &Repository, query: DiffQuery) -> Result<DiffResult, Error> {
             break;
         }
     }
-    if query.source == DiffSource::Unstaged
+    if matches!(query.source, DiffSource::Unstaged | DiffSource::Worktree)
         && !result.truncated
         && let Some(index) = &index
     {
@@ -733,6 +746,7 @@ pub fn diff(repo: &Repository, query: DiffQuery) -> Result<DiffResult, Error> {
             query.path.as_deref(),
             &mut result,
             query.stats_only,
+            query.source == DiffSource::Worktree,
         )?;
     }
     Ok(result)
@@ -809,7 +823,15 @@ fn append_conflicts(
     path: Option<&str>,
     result: &mut DiffResult,
     stats_only: bool,
+    compare_head: bool,
 ) -> Result<(), Error> {
+    let head = if compare_head {
+        commit_at(repo, "HEAD")?
+            .map(|commit| commit.tree())
+            .transpose()?
+    } else {
+        None
+    };
     for conflict in index.conflicts()? {
         let conflict = conflict?;
         let entry = conflict_entry(&conflict)?;
@@ -837,15 +859,27 @@ fn append_conflicts(
             result.files.push(file);
             continue;
         }
-        let old = match conflict.our.as_ref() {
-            Some(entry) => {
-                let size = repo.odb()?.read_header(entry.id)?.0;
+        let old_id = if compare_head {
+            match &head {
+                Some(tree) => match tree.get_path(Path::new(conflict_path)) {
+                    Ok(entry) => Some(entry.id()),
+                    Err(error) if error.code() == ErrorCode::NotFound => None,
+                    Err(error) => return Err(error.into()),
+                },
+                None => None,
+            }
+        } else {
+            conflict.our.as_ref().map(|entry| entry.id)
+        };
+        let old = match old_id {
+            Some(id) => {
+                let size = repo.odb()?.read_header(id)?.0;
                 if !stats_only && size > MAX_CONTENT {
                     file.binary = true;
                     result.files.push(file);
                     continue;
                 }
-                Some(repo.find_blob(entry.id)?)
+                Some(repo.find_blob(id)?)
             }
             None => None,
         };
@@ -861,7 +895,7 @@ fn append_conflicts(
             result.files.push(file);
             continue;
         }
-        // Conflicts compare stage 2 (ours) with the current file, including conflict markers.
+        // Include conflict markers from the working file in the selected comparison.
         let old_bytes = old.as_ref().map_or(&[][..], |blob| blob.content());
         let new_bytes = new
             .content
