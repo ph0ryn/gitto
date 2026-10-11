@@ -898,11 +898,17 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: "Refresh" })).toBeEnabled();
   });
 
-  it("uses the repository name in the page title", async () => {
+  it("uses the repository name in the page title and file tree heading", async () => {
     installFetch();
     render(<App />);
 
     await waitFor(() => expect(document.title).toBe("sample-repo | gitto"));
+    const files = screen.getByRole("complementary", { name: "File tree" });
+    expect(within(files).getByRole("heading", { name: repo.name })).toBeVisible();
+    expect(within(files).getByRole("heading", { name: repo.name }).parentElement).toHaveTextContent(
+      /^sample-repo$/,
+    );
+    expect(within(files).queryByRole("heading", { name: "Files" })).not.toBeInTheDocument();
   });
 
   it("shows the complete path of an open file and identifies the read-only workspace", async () => {

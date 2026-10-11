@@ -655,8 +655,7 @@ export default function App() {
             </select>
           </div>
           <div className="pane-toolbar">
-            <h2>Files</h2>
-            <span>{fileCount}</span>
+            <h2>{repo?.name}</h2>
           </div>
           <div className="pane-scroll tree-content">
             {fileCount === 0 ? (
