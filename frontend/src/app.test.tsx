@@ -905,6 +905,24 @@ describe("App", () => {
     await waitFor(() => expect(document.title).toBe("sample-repo | gitto"));
   });
 
+  it("shows the complete path of an open file and identifies the read-only workspace", async () => {
+    installFetch({
+      trees: {
+        "": [{ name: "src", path: "src", kind: "tree", size: null }],
+        src: [{ name: "main.ts", path: "src/main.ts", kind: "blob", size: 7 }],
+      },
+    });
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: "src" }));
+    await user.click(await screen.findByRole("button", { name: "main.ts" }));
+
+    const content = screen.getByRole("region", { name: "Repository content" });
+    expect(await within(content).findByRole("heading", { name: "src/main.ts" })).toBeVisible();
+    expect(within(screen.getByLabelText("Repository path")).getByText("Read-only")).toBeVisible();
+  });
+
   it("places files, content, changes, and history in the requested reading order", async () => {
     installFetch();
     render(<App />);

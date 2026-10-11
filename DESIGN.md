@@ -1,118 +1,197 @@
 ---
 name: gitto
-description: 白基調の読み取り専用Gitワークスペース
+description: 明るい室内でローカルGitを読む読み取り専用開発ツール
 colors:
-  primary: "#0969da"
-  surface: "#ffffff"
-  sidebar: "#f8f9fb"
-  ink: "#24292f"
-  muted: "#59636e"
-  line: "#dfe3e8"
-  selection: "#e9f2ff"
-  modified: "#9a6700"
-  added: "#1a7f37"
-  untracked: "#617267"
-  deleted: "#cf222e"
+  primary: "#245cc5"
+  surface: "#fff"
+  sidebar: "#f5f6f8"
+  history-surface: "#fafbfc"
+  ink: "#293241"
+  tree-ink: "#475367"
+  muted: "#606b7b"
+  line: "#e2e6ec"
+  selection: "#e8eefb"
+  hover: "#edf0f5"
+  modified: "#91630c"
+  added: "#247345"
+  untracked: "#526c5e"
+  deleted: "#bd3545"
 typography:
   label:
     fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Sans", sans-serif'
-    fontSize: "12px"
+    fontSize: "13px"
     fontWeight: 500
+    lineHeight: 1.5
+  metadata:
+    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Sans", sans-serif'
+    fontSize: "11px"
+    fontWeight: 400
     lineHeight: 1.5
   code:
     fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace"
-    fontSize: "12px"
+    fontSize: "11px"
     fontWeight: 400
-    lineHeight: 1.8
+    lineHeight: 1.85
 rounded:
-  control: "3px"
+  control: "6px"
+  button: "5px"
+  row: "4px"
+  badge: "4px"
+  source: "3px"
+  hairline: "1px"
 spacing:
   compact: "8px"
-  inset: "14px"
-  code: "24px"
+  pane-inset: "16px"
+  code-inset: "20px"
+  footer: "32px"
 components:
+  branch-select:
+    backgroundColor: "{colors.surface}"
+    textColor: "{colors.ink}"
+    rounded: "{rounded.control}"
+    height: "34px"
+    padding: "0 8px"
   icon-button:
     textColor: "{colors.muted}"
-    rounded: "{rounded.control}"
-    size: "28px"
+    rounded: "{rounded.button}"
+    size: "30px"
   selected-row:
     backgroundColor: "{colors.selection}"
-    textColor: "{colors.muted}"
+    rounded: "{rounded.row}"
+    height: "30px"
+  code-surface:
+    backgroundColor: "{colors.surface}"
+    textColor: "{colors.ink}"
+    typography: "{typography.code}"
+    padding: "0 20px"
 ---
 
 # Design System: gitto
 
 ## Overview
 
-白い本文と淡い中性色の操作欄を、細い境界線で分ける。
-ファイルや差分の閲覧に必要な情報を優先し、装飾的なヘッダーやカードを置かない。
-ブランチ名は選択欄だけに表示する。
-UIのラベル、案内、エラーは英語に統一し、ファイル内容とコミットメッセージは原文を保つ。
+gittoは、明るい室内で開発者がローカルGitを読み解くような、落ち着いた開発ツールである。白い本文を中心に、左の薄い灰色のファイルレール、白いChanges、オフホワイトのHistoryを細い境界線で分ける。情報密度は高く保つが、カードや大きな装飾で閲覧の流れを遮らない。
+
+ファイル、本文、変更、履歴の4ペインを同じ視線上に置き、選択中の対象だけを青い面で示す。Gitの状態色は選択中も意味を保つ。UIのラベル、案内、エラーは英語で表示し、ファイル内容とコミットメッセージは原文のまま扱う。アイコンは既存の最小限のインライン表現を保ち、新しいアイコンセットは導入しない。
+
+**Key Characteristics:**
+
+- 白いviewerを中心にした明るい作業面
+- 薄い灰色のfiles、白いchanges、オフホワイトのhistory
+- 細い境界線、固定された4ペイン、独立したスクロール
+- 13pxのUI、11pxのmetadata、11px/1.85のコードと差分
+- 青い選択・focusと、選択中も保たれるGit状態色
+- 読み取り専用と、空状態・エラーを隠さない案内
 
 ## Colors
 
-青は選択背景とフォーカスに使う。本文・補助情報・境界線は中性色で区別する。
-ツリーの変更は黄系、追加は緑、未追跡は薄いくすんだ緑、削除・競合は赤で示す。
-変更のない名前は少し薄いグレーにする。
-フォルダーにも配下の変更を反映し、選択中も名前の色を保つ。
-左のファイルツリーはHEADまたは現在のチェックアウト先を閲覧しているときだけ色を付ける。
-差分の追加・削除とエラーにも、既存の意味に対応する緑・赤を使う。
+白を本文の基準にし、薄い中性色でレールと履歴を分ける。青は選択とfocusだけに使い、Gitの状態色は対象の状態を伝えるために残す。
+
+### Primary
+
+- **作業面の青** (`#245cc5`): 選択状態、focus輪郭、選択中のcommit dotを示す。
+
+### Neutral
+
+- **本文の白** (`#fff`): viewerと標準コントロールの背景。
+- **ファイルレール** (`#f5f6f8`): 左のfiles、差分の省略区間、補助バッジの背景。
+- **履歴のオフホワイト** (`#fafbfc`): historyと行番号gutterの背景。
+- **本文のインク** (`#293241`): UI見出し、本文、選択された履歴行の文字。
+- **ツリーのインク** (`#475367`): 通常のファイル名とhashの文字。
+- **補助テキスト** (`#606b7b`): metadata、行番号、境界に近い説明。
+- **細い境界線** (`#e2e6ec`): ペイン、見出し、行番号、差分区間の区切り。
+- **選択の青面** (`#e8eefb`): ファイル、変更、履歴の選択背景。
+- **hoverの灰面** (`#edf0f5`): 未選択の行と小さな操作ボタンのhover。
+
+### Semantic status
+
+- **変更の黄** (`#91630c`): modifiedのファイル名と通常viewerの変更マーク。
+- **追加の緑** (`#247345`): addedのファイル名、追加行、追加数。
+- **未追跡のくすみ緑** (`#526c5e`): untrackedのファイル名。
+- **削除の赤** (`#bd3545`): deletedとconflictedのファイル名、削除行、エラーに関係する状態。
+
+**The Preserve-Meaning Rule.** 選択の青面はGit状態色を上書きしない。状態色は名前とマークに残し、選択は背景で示す。
 
 ## Typography
 
-操作にはシステムのサンセリフを使い、ツリーの名前、コードとパッチには等幅書体を使う。
-見出しは本文を圧迫しない大きさに抑え、数値は桁幅をそろえる。
+**UI Font:** `-apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Sans", sans-serif`
+**Code Font:** `ui-monospace, SFMono-Regular, Menlo, Consolas, monospace`
+
+システムsansは見出し、操作、ファイルツリー、履歴の説明に使い、monoはviewerとdiffの内容、hashに使う。UIは13px、metadataは11px、コードと差分は11px/1.85で、長い内容の読みやすさと桁の揃いを優先する。
+
+### Hierarchy
+
+- **UI** (400–600, 13px): ペイン見出し、ブランチselect、ファイルツリー、履歴message。Filesはブランチ見出し直下の補助toolbarとして11pxを使う。
+- **Metadata** (400–500, 11px): 件数、author、date、補助説明。hashも11pxのmonoで表示する。
+- **Code** (400, 11px, 1.85): viewerとdiffのソース、patch、行番号。
+
+**The Quiet Hierarchy Rule.** 見出しは本文を圧迫せず、historyではmessageを最初に、hash・author・dateを補助行として読ませる。
 
 ## Layout
 
-左からファイル、本文、変更、コミットの4欄を置く。
-列幅は200px、最小300pxの可変幅、280px、230pxである。
-見出しは44pxに固定し、内容は各欄の内部でスクロールする。
-画面全体の縦スクロールは発生させない。
-狭い画面ではワークスペースを横スクロールし、欄を縦に積まない。
-28pxのフッターは画面全幅と最下部を保ち、リポジトリのパスと閲覧位置を表示する。
+左からfiles、viewer、changes、historyの4ペインを置く。基準幅は220px、viewerは360px以上の可変幅、changesは260px、historyは260pxである。各ペインは境界を保ったまま内部だけがスクロールし、本文の増加で隣の境界を動かさない。
+
+見出しは52px、filesの補助toolbarは38px、ツリー行は30px、footerは32pxである。viewerの見出しでは親パスをmutedにし、filenameをsemiboldで表示する。footerは画面全幅に残り、repository path、Read-only、閲覧中のHEADまたはcommit位置を示す。
+
+狭い画面では4ペインを縦積みにせず、workspaceだけを水平にパンする。footerは全幅を保ち、600px以下では左右paddingとmetadata間隔を狭める。画面全体の縦スクロールは発生させない。
 
 ## Elevation & Depth
 
-影は使わず、背景色と1pxの境界線で領域を分ける。
+影は使わず、白、薄灰、オフホワイトの面と1pxの境界線で深さをつくる。選択とhoverは面の色だけを短く変え、ペインの構造やスクロール位置を動かさない。
+
+### Motion Vocabulary
+
+- **短い状態遷移** (`120ms ease`): button、select、summaryのbackground、color、border-colorに使う。
+- **Reduced motion**: `prefers-reduced-motion: reduce`では上記のtransitionを無効にする。
+
+**The Stable Boundary Rule.** プレビューの切り替えはviewerの内容だけを置き換え、4ペインの境界を動かさない。
 
 ## Shapes
 
-欄とヘッダーは直線的に構成する。小さな操作ボタンだけに控えめな角丸を使う。
+ペインと見出しは直線的に組み立て、境界は1pxにする。branch selectは控えめな6px、icon buttonと履歴行は5px、ツリー行と件数バッジは4px、change sourceは3px、status dotは1pxの角丸である。空状態はアイコンやplaceholder markを置かず、短い見出しと説明で示す。
 
 ## Components
 
-ブランチは標準のselectで選ぶ。履歴の閲覧中はコミットを選択値にし、
-元のブランチを選ぶことで先端へ戻れる。
-本文は単一のviewerとし、全幅の固定ヘッダーに項目名と右端の閉じるボタンを置く。
-本文と行番号はヘッダーの直下から始め、上下の余白を置かない。
-テキストには拡張子に応じた構文ハイライトと左側の行番号を表示する。
-差分の本文は1列に保ち、変更前と変更後の行番号を左側に並べる。
-追加・削除の色と記号は行番号の右側に置き、本文には通常の構文ハイライトだけを使う。
-Gitのメタデータとhunkの見出し、変更一覧と重複する件数表示は省く。
-複数ファイルの場合はファイル名を区切りとし、省略された中間区間は細い区切りで示す。
-行番号は横スクロール中も左側に保ち、選択・コピーの対象から除く。
-通常ファイルの行番号の右側に、追加・変更行の緑・黄の縦マークと削除位置の赤い境界マークを表示する。
-作業中はHEADと作業ツリー、履歴では第1親と選択コミットを比較する。
-何も開いていないときは、ヘッダーに名前やボタンを表示しない。
-ファイルツリーのフォルダーはその場で展開し、本文と兄弟項目を保つ。
-HEADまたはチェックアウト先では、未追跡と新規のローカルファイルをツリーに含める。
-新規フォルダーは状態一覧のパスから展開し、更新後も既存の展開状態を保つ。
-作業中のファイルは作業ツリーの内容を開く。削除されたファイルは元の内容と削除表示を残す。
-ツリー行は24pxとし、インデントと細いガイド線で階層を示す。
-作業ツリーの変更一覧はTrackedとUntrackedのフォルダー階層を表示し、単一のフォルダー列はまとめる。
-Trackedの行には追加・削除数を表示する。ステージ済みはS、競合は!で区別する。
-同じファイルのステージ済みと未ステージの差分は別の行として扱う。
-変更行の選択で差分を開き、内容ボタンは置かない。
-コミット閲覧中のChangesは、そのコミットと第1親との差分をフォルダー階層と行数で表示する。
-本文で個別のファイルや差分を開いても一覧を保ち、ブランチやHEADへ戻ると作業ツリーの変更へ戻す。
-コミットの変更には更新ボタンを表示しない。
-更新は変更一覧だけを取得し、本文・選択・スクロール位置を保つ。
-キーボードフォーカスは2pxの輪郭で示し、操作中と無効状態を明示する。
+### Branch selector
+
+- **Shape:** 標準のselectに6pxの角丸、34pxの高さ、左右8pxのpadding。
+- **Color:** 左のfilesレール上で白いsurfaceを使い、1pxの控えめな境界線を置く。
+- **Behavior:** branch名、HEAD、閲覧中のcommitを1つのselectで選ぶ。commitからbranchまたはHEADを選ぶと、そのrevisionのツリーと履歴へ戻る。
+
+### File tree and change tree
+
+- **Shape:** 30pxの行、階層ごとの16pxインデント、細いguide line。
+- **Color:** 通常名はtree-ink、Git状態はmodified／added／untracked／deletedの色、選択はselection面で示す。
+- **Behavior:** folderはその場で展開し、兄弟項目とviewerを保つ。ChangesはTracked、Untracked、またはCommitの階層を表示し、Trackedには追加・削除数、stagedにはS、conflictには!を付ける。
+- **Interaction:** 行の選択でviewerにfileまたはdiffを開く。別の内容ボタンは置かない。
+
+### Viewer heading and source
+
+- **Shape:** 52pxの固定headingと、その直下から始まるscrollable content。
+- **Color:** 親パスはmuted、filenameはsemibold。本文は白、line number gutterはhistory-surface。
+- **Behavior:** fileを開くと右端にclose buttonを表示し、何も開いていないときはheadingを空にする。ソースはsyntax highlight、左gutterの行番号、直近の比較基準に対応した変更マークを持つ。
+- **Code:** sourceとdiffはmono 11px/1.85。diffは一つのsource列で、旧行番号・新行番号・記号をgutterに保つ。
+
+### History
+
+- **Shape:** 5pxの角丸行、上下12px・左右10pxのpadding。
+- **Hierarchy:** summary messageを13pxの主情報、hashとauthorを11pxの補助行、dateを11pxの独立行として表示する。
+- **State:** 選択行はselection面とaccentのcommit dotで示し、load-moreはsurfaceと細い境界線で置く。
+
+### Controls and states
+
+- **Icon button:** 30px四方、5pxの角丸、透明な通常面。既存のclose／refreshなどのインラインSVGだけを使い、新しいアイコンセットは導入しない。
+- **Status and paging:** changeのstatus dotはadded／deletedをそれぞれGit状態色で縁取り、Load moreはsurfaceの小さなbuttonとして置き、hoverではhover面と本文色に変える。
+- **Focus:** キーボードfocusは2pxのaccent輪郭で示し、disabled controlは操作不可と半透明で示す。
+- **Empty and error:** viewerの空状態タイトルは18px、補助ペインでは14pxを使う。empty state、loading、API errorは英語の短い見出しと説明で示す。Gitや作業ツリーを書き換える操作は提供しない。
 
 ## Do's and Don'ts
 
-- 内容が増えても欄の境界とフッターを動かさない。
-- 変更一覧の更新失敗を表示し、開いている本文を保持する。
-- ブランチ名や製品名を補助行に繰り返さない。
-- Gitやファイルを書き換える操作を追加しない。
+- **Do** 内容が増えても4ペインの境界、独立スクロール、footerの位置を保つ。
+- **Do** viewerのheadingでは親パスをmuted、filenameをsemiboldにし、historyではmessage、hash・author、dateの順で階層を作る。
+- **Do** 選択中もGit状態色を保ち、選択の青面で対象を区別する。
+- **Do** 変更一覧の更新失敗を表示し、開いている本文と選択状態を保持する。
+- **Do** UIを英語にし、repository contentsとcommit messagesを原文のまま表示する。
+- **Don't** ブランチ名や製品名を補助行に繰り返さない。
+- **Don't** 新しいアイコンセット、placeholder empty mark、装飾的なカードや影を追加しない。
+- **Don't** Gitやファイルを書き換える操作を追加しない。

@@ -174,6 +174,7 @@ function FileTreeItem({
         className={`tree-row ${props.selectedPath === entry.path ? "is-selected" : ""}`}
         style={{ paddingLeft: 8 + depth * 16 }}
         aria-expanded={folder ? expanded : undefined}
+        aria-current={!folder && props.selectedPath === entry.path ? true : undefined}
         aria-busy={loading || undefined}
         title={entry.path}
         data-change={props.decorations?.get(entry.path)}

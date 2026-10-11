@@ -44,6 +44,32 @@ afterEach(() => {
 });
 
 describe("FileTree refresh", () => {
+  it("exposes the current file without marking expandable folders as current", () => {
+    const entries = [folder, file("first.ts"), file("second.ts")];
+    const props = {
+      entries,
+      disabled: false,
+      loadChildren: vi.fn(),
+      onSelect: vi.fn(),
+      onError: vi.fn(),
+    };
+    const view = render(<FileTree {...props} selectedPath="src/first.ts" />);
+
+    expect(screen.getByRole("button", { name: "first.ts" })).toHaveAttribute(
+      "aria-current",
+      "true",
+    );
+    expect(screen.getByRole("button", { name: "src" })).not.toHaveAttribute("aria-current");
+    expect(screen.getByRole("button", { name: "second.ts" })).not.toHaveAttribute("aria-current");
+
+    view.rerender(<FileTree {...props} selectedPath="src/second.ts" />);
+    expect(screen.getByRole("button", { name: "first.ts" })).not.toHaveAttribute("aria-current");
+    expect(screen.getByRole("button", { name: "second.ts" })).toHaveAttribute(
+      "aria-current",
+      "true",
+    );
+  });
+
   it("reloads expanded folders while keeping the old children until the update completes", async () => {
     const initial = deferred<TreeEntry[]>();
     const refreshed = deferred<TreeEntry[]>();

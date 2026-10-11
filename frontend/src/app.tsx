@@ -158,7 +158,6 @@ function formatBytes(size: number | null) {
 function EmptyState({ title, detail }: { title: string; detail: string }) {
   return (
     <div className="empty-state">
-      <span className="empty-mark" aria-hidden="true" />
       <strong>{title}</strong>
       <p>{detail}</p>
     </div>
@@ -683,7 +682,14 @@ export default function App() {
             {hasView && (
               <>
                 {fileView && <EntryIcon kind="blob" />}
-                <h2 title={viewLabel}>{viewLabel.slice(viewLabel.lastIndexOf("/") + 1)}</h2>
+                <h2 title={viewLabel} aria-label={viewLabel}>
+                  <span className="viewer-directory">
+                    {viewLabel.slice(0, viewLabel.lastIndexOf("/") + 1)}
+                  </span>
+                  <span className="viewer-filename">
+                    {viewLabel.slice(viewLabel.lastIndexOf("/") + 1)}
+                  </span>
+                </h2>
                 <button
                   className="icon-button"
                   aria-label="Close view"
@@ -814,7 +820,8 @@ export default function App() {
                     <span className="commit-copy">
                       <strong>{commit.summary || "(No message)"}</strong>
                       <small>
-                        {commit.shortId} · {commit.author}
+                        <code>{commit.shortId}</code>
+                        <span>{commit.author}</span>
                       </small>
                     </span>
                     <time dateTime={new Date(commit.time * 1000).toISOString()}>
@@ -837,6 +844,7 @@ export default function App() {
           {repo?.path}
         </span>
         <span className="footer-meta">
+          <span className="readonly-label">Read-only</span>
           {fileView && <span>{formatBytes(fileView.size)}</span>}
           <span title={selectedCommit ?? commits[0]?.id}>
             {selectedCommit
