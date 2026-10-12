@@ -400,10 +400,6 @@ export default function App() {
     cancelPreview();
     setBusy(true);
     setError(null);
-    setFileView(null);
-    setDiffView(null);
-    setSelectedChange(null);
-    setViewLabel("Loading…");
     try {
       const [treeData, diffData] = await Promise.all([
         api<{ entries: TreeEntry[] }>(`/api/tree?revision=${encodeURIComponent(commit.id)}&path=`),
@@ -415,7 +411,9 @@ export default function App() {
           )
         : diffData;
       setTree(treeData.entries);
+      setFileView(null);
       setDiffView(diffData);
+      setSelectedChange(null);
       setRevision(commit.id);
       setSelectedCommit(commit.id);
       setCommitChanges(
@@ -424,8 +422,6 @@ export default function App() {
       setViewLabel(`${commit.shortId} changes`);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Could not load the commit.");
-      setViewLabel("Select a file");
-      setDiffView(null);
     } finally {
       setBusy(false);
     }
@@ -435,10 +431,6 @@ export default function App() {
     cancelPreview();
     setBusy(true);
     setError(null);
-    setFileView(null);
-    setDiffView(null);
-    setSelectedChange(null);
-    setViewLabel("Loading…");
     try {
       const [commitData, treeData] = await Promise.all([
         api<{ commits: Commit[]; hasMore: boolean }>(
@@ -457,12 +449,12 @@ export default function App() {
       setSelectedBranchRevision(branch.revision);
       setSelectedCommit(null);
       setCommitChanges([]);
+      setSelectedChange(null);
       setFileView(null);
       setDiffView(null);
       setViewLabel("Select a file");
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Could not load the branch.");
-      setViewLabel("Select a file");
     } finally {
       setBusy(false);
     }
@@ -472,10 +464,6 @@ export default function App() {
     cancelPreview();
     setBusy(true);
     setError(null);
-    setFileView(null);
-    setDiffView(null);
-    setSelectedChange(null);
-    setViewLabel("Loading…");
     try {
       const [commitData, treeData] = await Promise.all([
         api<{ commits: Commit[]; hasMore: boolean }>(
@@ -494,10 +482,12 @@ export default function App() {
       );
       setSelectedCommit(null);
       setCommitChanges([]);
+      setSelectedChange(null);
+      setFileView(null);
+      setDiffView(null);
       setViewLabel("Select a file");
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Could not load HEAD.");
-      setViewLabel("Select a file");
     } finally {
       setBusy(false);
     }

@@ -1698,6 +1698,103 @@ describe("App", () => {
     expect(screen.getByText("image.png")).toBeInTheDocument();
   });
 
+  it.each(["commit", "branch", "HEAD"])(
+    "keeps the current content and pane frames until %s navigation finishes",
+    async (destination) => {
+      const fetchMock = installFetch({
+        repoData: {
+          ...repo,
+          branches: [...repo.branches, { name: "other", revision: "refs/heads/other" }],
+        },
+      });
+      const user = userEvent.setup();
+      render(<App />);
+      const commit = await screen.findByRole("button", { name: /最初のコミット/ });
+      await user.click(commit);
+      await screen.findByRole("button", { name: "Back to HEAD" });
+      await user.click(screen.getByRole("button", { name: "README.md" }));
+      await screen.findByText("# gitto");
+      const content = screen.getByRole("region", { name: "Repository content" });
+      const heading = within(content).getByRole("heading", { name: "README.md" });
+      const preview = content.querySelector(".code-view");
+      const pane = content.querySelector(".viewer-content")!;
+      pane.scrollTop = 80;
+      const frames = document.querySelectorAll(".workspace, .workspace > *, .repo-footer");
+      const footer = screen.getByLabelText("Repository information");
+      const footerText = footer.textContent;
+      let resolveNavigation!: (value: Response) => void;
+      fetchMock.mockImplementationOnce(
+        () =>
+          new Promise<Response>((resolve) => {
+            resolveNavigation = resolve;
+          }),
+      );
+
+      if (destination === "branch") {
+        await user.selectOptions(screen.getByLabelText("Branch"), "refs/heads/other");
+      } else {
+        await user.click(
+          destination === "HEAD" ? screen.getByRole("button", { name: "Back to HEAD" }) : commit,
+        );
+      }
+
+      expect(content).toHaveAttribute("aria-busy", "true");
+      expect(heading).toBeInTheDocument();
+      expect(preview).toBeInTheDocument();
+      expect(pane.scrollTop).toBe(80);
+      expect(footer).toHaveTextContent(footerText!);
+      expect(within(content).queryByText("Loading…")).not.toBeInTheDocument();
+      for (const frame of frames) expect(frame).toBeInTheDocument();
+
+      await act(async () => {
+        resolveNavigation(
+          await response(destination === "commit" ? { entries: tree.entries } : commits),
+        );
+      });
+      expect(content).toHaveAttribute("aria-busy", "false");
+      expect(preview).not.toBeInTheDocument();
+      expect(
+        within(content).getByText(destination === "commit" ? "new" : "Open a file"),
+      ).toBeVisible();
+      expect(content.querySelector(".viewer-content")).toBe(pane);
+      for (const frame of frames) expect(frame).toBeInTheDocument();
+    },
+  );
+
+  it.each(["commit", "branch", "HEAD"])(
+    "keeps the current content if %s navigation fails",
+    async (destination) => {
+      const fetchMock = installFetch({
+        repoData: {
+          ...repo,
+          branches: [...repo.branches, { name: "other", revision: "refs/heads/other" }],
+        },
+      });
+      const user = userEvent.setup();
+      render(<App />);
+      const commit = await screen.findByRole("button", { name: /最初のコミット/ });
+      await user.click(commit);
+      await screen.findByRole("heading", { name: "abc1234 changes" });
+      const content = screen.getByRole("region", { name: "Repository content" });
+      const preview = content.querySelector(".diff-view");
+      fetchMock.mockImplementationOnce(() => response({ error: "Navigation unavailable" }, 500));
+
+      if (destination === "branch") {
+        await user.selectOptions(screen.getByLabelText("Branch"), "refs/heads/other");
+      } else {
+        await user.click(
+          destination === "HEAD" ? screen.getByRole("button", { name: "Back to HEAD" }) : commit,
+        );
+      }
+
+      expect(await screen.findByRole("alert")).toHaveTextContent("Navigation unavailable");
+      expect(preview).toBeInTheDocument();
+      expect(within(content).getByRole("heading", { name: "abc1234 changes" })).toBeVisible();
+      expect(content).toHaveAttribute("aria-busy", "false");
+      expect(screen.getByLabelText("Branch")).toHaveValue(commits.commits[0].id);
+    },
+  );
+
   it("disables other navigation while a commit is loading", async () => {
     let releaseDiff!: () => void;
     const diffPromise = new Promise((resolve) => {

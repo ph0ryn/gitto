@@ -58,7 +58,7 @@ summary {
 button:disabled,
 select:disabled {
   cursor: not-allowed;
-  opacity: 0.5;
+  opacity: 1;
 }
 button:focus-visible,
 select:focus-visible {
@@ -161,7 +161,7 @@ h2 {
   font-weight: 500;
   cursor: pointer;
 }
-.branch-heading select:hover:not(:disabled) {
+.branch-heading select:hover {
   border-color: #a8b6ca;
 }
 .pane-toolbar {
@@ -279,8 +279,8 @@ summary.tree-row::-webkit-details-marker {
   color: var(--muted);
   font-size: 11px;
 }
-.tree-row:hover:not(:disabled):not(.is-selected),
-.commit-row:hover:not(:disabled):not(.is-selected) {
+.tree-row:hover:not(.is-selected),
+.commit-row:hover:not(.is-selected) {
   background: var(--hover);
 }
 .tree-row[data-change="modified"] {
@@ -416,7 +416,7 @@ summary.tree-row::-webkit-details-marker {
   background: transparent;
   color: var(--muted);
 }
-.icon-button:hover:not(:disabled) {
+.icon-button:hover {
   background: var(--hover);
   color: var(--ink);
 }
@@ -752,7 +752,7 @@ summary.tree-row::-webkit-details-marker {
   color: var(--muted);
   font-size: 12px;
 }
-.load-more:hover:not(:disabled) {
+.load-more:hover {
   background: var(--hover);
   color: var(--ink);
 }
@@ -769,7 +769,7 @@ summary.tree-row::-webkit-details-marker {
   color: var(--ink);
   font-size: 11px;
 }
-.back-to-head:hover:not(:disabled) {
+.back-to-head:hover {
   background: var(--hover);
 }
 .empty-state,

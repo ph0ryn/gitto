@@ -183,7 +183,7 @@ gittoは、明るい室内で開発者がローカルGitを読み解くような
 
 - **Icon button:** 30px四方、5pxの角丸、透明な通常面。既存のclose／refreshなどのインラインSVGだけを使い、新しいアイコンセットは導入しない。
 - **Status and paging:** stage状態は標準のdisabled checkboxで表示する。Load moreはsurfaceの小さなbuttonとして置き、hoverではhover面と本文色に変える。
-- **Focus:** キーボードfocusは2pxのaccent輪郭で示し、disabled controlは操作不可と半透明で示す。
+- **Focus:** キーボードfocusは2pxのaccent輪郭で示す。読み込み中のdisabled controlは操作不可にするが、文字・背景・hoverの見た目を保つ。
 - **Empty and error:** viewerの空状態タイトルは18px、補助ペインでは14pxを使う。empty state、loading、API errorは英語の短い見出しと説明で示す。Gitや作業ツリーを書き換える操作は提供しない。
 
 ## Do's and Don'ts
