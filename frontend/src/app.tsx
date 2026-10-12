@@ -428,58 +428,29 @@ export default function App() {
     }
   }
 
-  async function chooseBranch(branch: Branch) {
+  async function chooseRevision(nextRevision: string) {
     cancelPreview();
     setBusy(true);
     setError(null);
     try {
       const [commitData, treeData] = await Promise.all([
         api<{ commits: Commit[]; hasMore: boolean }>(
-          `/api/commits?revision=${encodeURIComponent(branch.revision)}&offset=0&limit=50`,
+          `/api/commits?revision=${encodeURIComponent(nextRevision)}&offset=0&limit=50`,
         ),
         api<{ entries: TreeEntry[] }>(
-          `/api/tree?revision=${encodeURIComponent(branch.revision)}&path=`,
+          `/api/tree?revision=${encodeURIComponent(nextRevision)}&path=`,
         ),
       ]);
       setCommits(commitData.commits);
       setHasMore(commitData.hasMore);
       setTree(treeData.entries);
-      setRevision(branch.revision);
-      setHistoryRevision(branch.revision);
-      setHistoryPages(1);
-      setSelectedBranchRevision(branch.revision);
-      setSelectedCommit(null);
-      setCommitChanges([]);
-      setSelectedChange(null);
-      setFileView(null);
-      setDiffView(null);
-      setViewLabel("Select a file");
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Could not load the branch.");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function chooseHead() {
-    cancelPreview();
-    setBusy(true);
-    setError(null);
-    try {
-      const [commitData, treeData] = await Promise.all([
-        api<{ commits: Commit[]; hasMore: boolean }>(
-          "/api/commits?revision=HEAD&offset=0&limit=50",
-        ),
-        api<{ entries: TreeEntry[] }>("/api/tree?revision=HEAD&path="),
-      ]);
-      setCommits(commitData.commits);
-      setHasMore(commitData.hasMore);
-      setTree(treeData.entries);
-      setRevision("HEAD");
-      setHistoryRevision("HEAD");
+      setRevision(nextRevision);
+      setHistoryRevision(nextRevision);
       setHistoryPages(1);
       setSelectedBranchRevision(
-        repo?.branches.find((branch) => branch.name === repo.head)?.revision ?? "HEAD",
+        nextRevision === "HEAD"
+          ? (repo?.branches.find((branch) => branch.name === repo.head)?.revision ?? "HEAD")
+          : nextRevision,
       );
       setSelectedCommit(null);
       setCommitChanges([]);
@@ -488,7 +459,13 @@ export default function App() {
       setDiffView(null);
       setViewLabel("Select a file");
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Could not load HEAD.");
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : nextRevision === "HEAD"
+            ? "Could not load HEAD."
+            : "Could not load the branch.",
+      );
     } finally {
       setBusy(false);
     }
@@ -651,11 +628,11 @@ export default function App() {
               value={selectedCommit ?? selectedBranchRevision}
               onChange={(event) => {
                 if (event.target.value === "HEAD") {
-                  void chooseHead();
+                  void chooseRevision("HEAD");
                   return;
                 }
                 const branch = repo?.branches.find((item) => item.revision === event.target.value);
-                if (branch) void chooseBranch(branch);
+                if (branch) void chooseRevision(branch.revision);
               }}
               disabled={busy || (!repo?.branches.length && !repo?.head)}
             >
@@ -803,7 +780,11 @@ export default function App() {
           <div className="column-heading">
             <h2>Commits</h2>
             {selectedCommit && (
-              <button className="back-to-head" onClick={() => void chooseHead()} disabled={busy}>
+              <button
+                className="back-to-head"
+                onClick={() => void chooseRevision("HEAD")}
+                disabled={busy}
+              >
                 Back to HEAD
               </button>
             )}
