@@ -2,9 +2,13 @@ use git2::{Delta, DiffOptions, ErrorCode, ObjectType, Repository, Status};
 use serde::Serialize;
 use std::{collections::HashSet, fs, io::Read, path::Path};
 
-use crate::api::{CommitsQuery, DiffQuery, DiffSource, FileQuery, FileSource, RevisionQuery};
+use crate::api::{
+    CommitsQuery, DiffQuery, DiffSource, FileQuery, FileSource, RevisionQuery, SearchQuery,
+    SearchSource,
+};
 
 const MAX_CONTENT: usize = 2 * 1024 * 1024;
+const MAX_SEARCH_MATCHES: usize = 200;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -82,6 +86,28 @@ pub struct FileContent {
     kind: &'static str,
     content: Option<String>,
     size: u64,
+}
+
+#[derive(Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SearchResult {
+    files: Vec<SearchFile>,
+    truncated: bool,
+    skipped_files: usize,
+}
+
+#[derive(Serialize)]
+pub struct SearchFile {
+    path: String,
+    matches: Vec<usize>,
+    snippets: Vec<SearchSnippet>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SearchSnippet {
+    start_line: usize,
+    content: String,
 }
 
 #[derive(Serialize)]
@@ -360,9 +386,18 @@ pub fn file(repo: &Repository, query: FileQuery) -> Result<FileContent, Error> {
             (entry.id(), entry.filemode() as u32)
         }
     };
+    blob_content(repo, query.path, oid, mode)
+}
+
+fn blob_content(
+    repo: &Repository,
+    path: String,
+    oid: git2::Oid,
+    mode: u32,
+) -> Result<FileContent, Error> {
     if mode == 0o160000 {
         return Ok(FileContent {
-            path: query.path,
+            path,
             kind: "submodule",
             content: Some(oid.to_string()),
             size: 0,
@@ -370,10 +405,174 @@ pub fn file(repo: &Repository, query: FileQuery) -> Result<FileContent, Error> {
     }
     let size = repo.odb()?.read_header(oid)?.0;
     if size > MAX_CONTENT {
-        return Ok(content(query.path, &[], size as u64));
+        return Ok(content(path, &[], size as u64));
     }
     let blob = repo.find_blob(oid)?;
-    Ok(content(query.path, blob.content(), blob.size() as u64))
+    Ok(content(path, blob.content(), blob.size() as u64))
+}
+
+pub fn search(repo: &Repository, query: SearchQuery) -> Result<SearchResult, Error> {
+    let mut result = SearchResult::default();
+    let mut bytes = 0;
+    match query.source {
+        SearchSource::Commit => {
+            if let Some(commit) = commit_at(repo, &query.revision)? {
+                search_tree(
+                    repo,
+                    &commit.tree()?,
+                    "",
+                    &query.query,
+                    &mut result,
+                    &mut bytes,
+                )?;
+            }
+        }
+        SearchSource::Worktree => {
+            if repo.is_bare() {
+                return Err(Error::NoWorktree);
+            }
+            let mut options = git2::StatusOptions::new();
+            options
+                .include_untracked(true)
+                .include_unmodified(true)
+                .recurse_untracked_dirs(true);
+            let statuses = repo.statuses(Some(&mut options))?;
+            let mut paths = Vec::new();
+            for entry in statuses.iter() {
+                let delta = entry.index_to_workdir().or_else(|| entry.head_to_index());
+                let path = delta
+                    .as_ref()
+                    .and_then(|delta| delta.new_file().path_bytes())
+                    .unwrap_or_else(|| entry.path_bytes());
+                let path = utf8(path)?;
+                if searchable_worktree_path(path, entry.status()) {
+                    paths.push(path.to_owned());
+                }
+            }
+            paths.sort();
+            paths.dedup();
+            for path in paths {
+                validate_path(&path, false)?;
+                append_search_file(
+                    &mut result,
+                    worktree_file(repo, &path, true)?,
+                    &query.query,
+                    &mut bytes,
+                );
+                if result.truncated {
+                    break;
+                }
+            }
+        }
+    }
+    Ok(result)
+}
+
+fn searchable_worktree_path(path: &str, status: Status) -> bool {
+    !path.ends_with('/')
+        && !status.contains(Status::WT_DELETED)
+        && (!status.contains(Status::INDEX_DELETED) || status.contains(Status::WT_NEW))
+}
+
+fn search_tree(
+    repo: &Repository,
+    tree: &git2::Tree<'_>,
+    prefix: &str,
+    query: &str,
+    result: &mut SearchResult,
+    bytes: &mut usize,
+) -> Result<(), Error> {
+    for entry in tree {
+        let path = format!("{prefix}{}", utf8(entry.name_bytes())?);
+        validate_path(&path, false)?;
+        if entry.kind() == Some(ObjectType::Tree) {
+            search_tree(
+                repo,
+                &repo.find_tree(entry.id())?,
+                &format!("{path}/"),
+                query,
+                result,
+                bytes,
+            )?;
+        } else {
+            append_search_file(
+                result,
+                blob_content(repo, path, entry.id(), entry.filemode() as u32)?,
+                query,
+                bytes,
+            );
+        }
+        if result.truncated {
+            break;
+        }
+    }
+    Ok(())
+}
+
+fn append_search_file(
+    result: &mut SearchResult,
+    file: FileContent,
+    query: &str,
+    bytes: &mut usize,
+) {
+    if file.kind != "text" {
+        result.skipped_files += 1;
+        return;
+    }
+    let text = file.content.expect("Text files have content");
+    let lines: Vec<_> = text.split_inclusive('\n').collect();
+    let remaining = MAX_SEARCH_MATCHES
+        - result
+            .files
+            .iter()
+            .map(|file| file.matches.len())
+            .sum::<usize>();
+    let mut matches: Vec<_> = lines
+        .iter()
+        .enumerate()
+        .filter(|(_, line)| line.contains(query))
+        .map(|(index, _)| index + 1)
+        .take(remaining + 1)
+        .collect();
+    if matches.len() > remaining {
+        matches.truncate(remaining);
+        result.truncated = true;
+    }
+    if matches.is_empty() {
+        return;
+    }
+    let mut ranges: Vec<std::ops::Range<usize>> = Vec::new();
+    for &line in &matches {
+        let range = line.saturating_sub(3)..(line + 2).min(lines.len());
+        if let Some(previous) = ranges.last_mut()
+            && range.start <= previous.end
+        {
+            previous.end = range.end;
+        } else {
+            ranges.push(range);
+        }
+    }
+    let size: usize = ranges
+        .iter()
+        .flat_map(|range| &lines[range.clone()])
+        .map(|line| line.len())
+        .sum();
+    if *bytes + size > MAX_CONTENT {
+        result.truncated = true;
+        return;
+    }
+    *bytes += size;
+    result.files.push(SearchFile {
+        path: file.path,
+        matches,
+        snippets: ranges
+            .into_iter()
+            .map(|range| SearchSnippet {
+                start_line: range.start + 1,
+                content: lines[range].concat(),
+            })
+            .collect(),
+    });
 }
 
 fn worktree_file(repo: &Repository, path: &str, limited: bool) -> Result<FileContent, Error> {
@@ -918,6 +1117,115 @@ fn append_conflicts(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn worktree_search_excludes_deleted_paths_and_nested_repository_directories() {
+        assert!(!searchable_worktree_path(
+            "deleted.txt",
+            Status::INDEX_DELETED
+        ));
+        assert!(!searchable_worktree_path("deleted.txt", Status::WT_DELETED));
+        assert!(!searchable_worktree_path("nested/", Status::WT_NEW));
+        assert!(searchable_worktree_path(
+            "restored.txt",
+            Status::INDEX_DELETED | Status::WT_NEW
+        ));
+        assert!(searchable_worktree_path("regular.txt", Status::CURRENT));
+    }
+
+    #[test]
+    fn search_groups_literal_matches_with_merged_context_and_original_line_numbers() {
+        let text = "needle.\r\none\r\ntwo\r\nneedle. needle.\r\nfour\r\nfive\r\nsix\r\nseven\r\neight\r\n日本語 needle.\r\n";
+        let mut result = SearchResult::default();
+        let mut bytes = 0;
+        append_search_file(
+            &mut result,
+            content("note.txt".into(), text.as_bytes(), text.len() as u64),
+            "needle.",
+            &mut bytes,
+        );
+        assert_eq!(result.files.len(), 1);
+        assert_eq!(result.files[0].matches, [1, 4, 10]);
+        assert_eq!(result.files[0].snippets.len(), 2);
+        assert_eq!(result.files[0].snippets[0].start_line, 1);
+        assert_eq!(
+            result.files[0].snippets[0].content,
+            "needle.\r\none\r\ntwo\r\nneedle. needle.\r\nfour\r\nfive\r\n"
+        );
+        assert_eq!(result.files[0].snippets[1].start_line, 8);
+        assert!(
+            result.files[0].snippets[1]
+                .content
+                .ends_with("日本語 needle.\r\n")
+        );
+        assert!(!result.truncated);
+    }
+
+    #[test]
+    fn search_reports_excluded_files_and_only_truncates_when_another_match_exists() {
+        let mut result = SearchResult::default();
+        let mut bytes = 0;
+        append_search_file(
+            &mut result,
+            content("binary".into(), b"needle\0", 7),
+            "needle",
+            &mut bytes,
+        );
+        append_search_file(
+            &mut result,
+            content("large".into(), &[], MAX_CONTENT as u64 + 1),
+            "needle",
+            &mut bytes,
+        );
+        assert_eq!(result.skipped_files, 2);
+        let text = "needle\n".repeat(MAX_SEARCH_MATCHES);
+        append_search_file(
+            &mut result,
+            content("note.txt".into(), text.as_bytes(), text.len() as u64),
+            "needle",
+            &mut bytes,
+        );
+        assert_eq!(result.files[0].matches.len(), MAX_SEARCH_MATCHES);
+        assert!(!result.truncated);
+        append_search_file(
+            &mut result,
+            content("other.txt".into(), b"Needle\n", 7),
+            "needle",
+            &mut bytes,
+        );
+        assert!(!result.truncated);
+        append_search_file(
+            &mut result,
+            content("last.txt".into(), b"needle\n", 7),
+            "needle",
+            &mut bytes,
+        );
+        assert!(result.truncated);
+        assert_eq!(result.files.len(), 1);
+    }
+
+    #[test]
+    fn search_limits_the_combined_snippet_bytes() {
+        let text = "needle".to_owned() + &"x".repeat(MAX_CONTENT - 6);
+        let mut result = SearchResult::default();
+        let mut bytes = 0;
+        append_search_file(
+            &mut result,
+            content("full.txt".into(), text.as_bytes(), text.len() as u64),
+            "needle",
+            &mut bytes,
+        );
+        assert_eq!(bytes, MAX_CONTENT);
+        assert!(!result.truncated);
+        append_search_file(
+            &mut result,
+            content("extra.txt".into(), b"needle", 6),
+            "needle",
+            &mut bytes,
+        );
+        assert!(result.truncated);
+        assert_eq!(result.files.len(), 1);
+    }
 
     #[test]
     fn statistics_only_keep_file_counts_without_serializing_the_patch() {

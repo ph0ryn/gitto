@@ -64,6 +64,7 @@ function installFetch(
     commitStats?: unknown;
     diffPromise?: Promise<unknown>;
     fileContent?: string;
+    searchData?: unknown;
     trees?: Record<string, typeof tree.entries>;
     stats?: Record<string, { additions: number; deletions: number; binary?: boolean }>;
   } = {},
@@ -99,6 +100,7 @@ function installFetch(
         return response({ ...tree, entries });
       }
       if (url === "/api/status") return response(statusData);
+      if (url.startsWith("/api/search")) return response(options.searchData);
       if (url.startsWith("/api/file"))
         return response({
           path: new URL(url, "http://localhost").searchParams.get("path"),
@@ -140,12 +142,95 @@ function installFetch(
 
 afterEach(() => {
   cleanup();
+  Reflect.deleteProperty(Element.prototype, "scrollIntoView");
   vi.restoreAllMocks();
   vi.useRealTimers();
   document.title = "gitto";
 });
 
 describe("App", () => {
+  it("searches working-tree text and opens a result at its line", async () => {
+    const scrollIntoView = vi.fn();
+    Object.defineProperty(Element.prototype, "scrollIntoView", {
+      configurable: true,
+      value: scrollIntoView,
+    });
+    const fetchMock = installFetch({
+      fileContent: "first\nsecond\nconst needle = true;\n",
+      searchData: {
+        files: [
+          {
+            path: "src/main.ts",
+            matches: [3],
+            snippets: [{ startLine: 1, content: "first\nsecond\nconst needle = true;\n" }],
+          },
+        ],
+        truncated: false,
+        skippedFiles: 0,
+      },
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByText("Tracked");
+    await user.click(screen.getByRole("button", { name: "README.md" }));
+    await screen.findByRole("heading", { name: "README.md" });
+    expect(screen.queryByRole("searchbox", { name: "Search repository" })).not.toBeInTheDocument();
+    const searchToggle = screen.getByRole("button", { name: "Search" });
+    expect(searchToggle).toHaveAttribute("aria-expanded", "false");
+    await user.click(searchToggle);
+    const viewer = screen.getByRole("region", { name: "Repository content" });
+    const field = within(viewer).getByRole("searchbox", { name: "Search repository" });
+    expect(field).toHaveFocus();
+    expect(viewer.querySelector("header")?.nextElementSibling).toBe(field.closest("form"));
+    await user.type(field, "needle");
+    expect(
+      fetchMock.mock.calls.some(
+        ([url]) => typeof url === "string" && url.startsWith("/api/search"),
+      ),
+    ).toBe(false);
+    expect(screen.getByRole("heading", { name: "README.md" })).toBeVisible();
+    await user.keyboard("{Enter}");
+
+    expect(await screen.findByRole("heading", { name: "Search results" })).toBeVisible();
+    expect(await screen.findByText("1 matching line in 1 file")).toBeVisible();
+    expect(document.querySelector("mark")).toHaveTextContent("needle");
+    expect(screen.getByRole("button", { name: "Go to src/main.ts line 3" })).toBeVisible();
+    const summary = screen
+      .getByRole("button", { name: "Open src/main.ts at line 3" })
+      .closest("summary")!;
+    await user.click(within(summary).getByText("src/main.ts"));
+    expect(summary.parentElement).not.toHaveAttribute("open");
+    await user.click(within(summary).getByText("src/main.ts"));
+    expect(
+      fetchMock.mock.calls.some(
+        ([url]) => url === "/api/search?source=worktree&revision=HEAD&query=needle",
+      ),
+    ).toBe(true);
+    await user.click(screen.getByRole("button", { name: "Open src/main.ts at line 3" }));
+    expect(await screen.findByRole("heading", { name: "src/main.ts" })).toBeVisible();
+    expect(screen.getByRole("img", { name: "Search result line 3" })).toBeVisible();
+    expect(scrollIntoView).toHaveBeenCalledWith({ block: "center" });
+    await user.click(screen.getByRole("button", { name: "Search" }));
+    expect(screen.queryByRole("searchbox", { name: "Search repository" })).not.toBeInTheDocument();
+  });
+
+  it("searches the selected commit and reports empty results", async () => {
+    const fetchMock = installFetch({
+      searchData: { files: [], truncated: false, skippedFiles: 0 },
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(await screen.findByRole("button", { name: /最初のコミット/ }));
+    await user.click(screen.getByRole("button", { name: "Search" }));
+    await user.type(screen.getByRole("searchbox", { name: "Search repository" }), "missing{Enter}");
+    expect(await screen.findByText("No matches")).toBeVisible();
+    expect(
+      fetchMock.mock.calls.some(
+        ([url]) => url === "/api/search?source=commit&revision=abc123456789&query=missing",
+      ),
+    ).toBe(true);
+  });
+
   it("shows total line counts in tracked and untracked category headers", async () => {
     installFetch({
       statusData: {

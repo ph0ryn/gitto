@@ -11,6 +11,7 @@ import { lineChanges, type LineChange } from "./diffLines";
 import DiffViewer, { type DiffFile, type DiffView } from "./diffViewer";
 import EntryIcon from "./entryIcon";
 import FileTree, { mergeLocalEntries, type TreeEntry } from "./fileTree";
+import SearchResults, { type SearchResult } from "./searchResults";
 
 type Branch = { name: string; revision: string };
 type Repo = {
@@ -194,6 +195,42 @@ export default function App() {
   const [previewLoading, setPreviewLoading] = useState(false);
   const previewRequest = useRef<AbortController | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const searchInput = useRef<HTMLInputElement>(null);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState<string | null>(null);
+  const [searchResult, setSearchResult] = useState<SearchResult | null>(null);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const [searchVersion, setSearchVersion] = useState(0);
+  const [focusLine, setFocusLine] = useState<number | undefined>();
+  const viewingHead =
+    revision === "HEAD" ||
+    revision === repo?.branches.find((branch) => branch.name === repo.head)?.revision;
+  const searchSource = viewingHead && !repo?.bare ? "worktree" : "commit";
+
+  useEffect(() => {
+    if (searchOpen) searchInput.current?.focus();
+  }, [searchOpen]);
+
+  useEffect(() => {
+    if (searchQuery === null) return;
+    const controller = new AbortController();
+    setSearchResult(null);
+    setSearchError(null);
+    void api<SearchResult>(
+      `/api/search?source=${searchSource}&revision=${encodeURIComponent(revision)}&query=${encodeURIComponent(searchQuery)}`,
+      controller.signal,
+    )
+      .then((data) => {
+        if (!controller.signal.aborted) setSearchResult(data);
+      })
+      .catch((reason: unknown) => {
+        if (!controller.signal.aborted)
+          setSearchError(
+            reason instanceof Error ? reason.message : "Could not search the repository.",
+          );
+      });
+    return () => controller.abort();
+  }, [searchQuery, searchSource, revision, searchVersion]);
 
   const loadWorkspace = useCallback(async () => {
     setLoading(true);
@@ -215,6 +252,7 @@ export default function App() {
       setCommits(commitData.commits);
       setHasMore(commitData.hasMore);
       setTree(treeData.entries);
+      setSearchQuery(null);
       setStatus(statusData);
       setRevision(requestRevision);
       setHistoryRevision(requestRevision);
@@ -413,6 +451,7 @@ export default function App() {
         : diffData;
       setTree(treeData.entries);
       setFileView(null);
+      setSearchQuery(null);
       setDiffView(diffData);
       setSelectedChange(null);
       setRevision(commit.id);
@@ -445,6 +484,7 @@ export default function App() {
       setHasMore(commitData.hasMore);
       setTree(treeData.entries);
       setRevision(nextRevision);
+      setSearchQuery(null);
       setHistoryRevision(nextRevision);
       setHistoryPages(1);
       setSelectedBranchRevision(
@@ -471,12 +511,14 @@ export default function App() {
     }
   }
 
-  async function openEntry(entry: TreeEntry) {
+  async function openEntry(entry: TreeEntry, line?: number) {
     const signal = startPreview();
     try {
       const data = await loadFile(entry, revision, status, viewingHead && !repo?.bare, signal);
       if (signal.aborted) return;
       setFileView(data);
+      setFocusLine(line);
+      setSearchQuery(null);
       setDiffView(null);
       setSelectedChange(null);
       setFileEntry(entry);
@@ -502,6 +544,7 @@ export default function App() {
       );
       if (signal.aborted) return;
       setDiffView(data);
+      setSearchQuery(null);
       setFileView(null);
       setSelectedChange(changeKey({ ...entry, source }));
       setViewLabel(entry.path);
@@ -568,9 +611,6 @@ export default function App() {
     () => buildChangeDecorations(Object.values(status).flat()),
     [status],
   );
-  const viewingHead =
-    revision === "HEAD" ||
-    revision === repo?.branches.find((branch) => branch.name === repo.head)?.revision;
   const localPaths = viewingHead
     ? [...status.untracked, ...status.staged, ...status.unstaged]
         .filter((entry) => ["untracked", "added", "renamed", "copied"].includes(entry.status))
@@ -603,7 +643,7 @@ export default function App() {
   const changeCount = selectedCommit
     ? commitChanges.length
     : Object.values(status).reduce((sum, entries) => sum + entries.length, 0);
-  const hasView = Boolean(fileView || diffView);
+  const hasView = Boolean(fileView || diffView || searchQuery !== null);
 
   return (
     <main className="app-shell">
@@ -695,6 +735,7 @@ export default function App() {
                   disabled={busy}
                   onClick={() => {
                     cancelPreview();
+                    setSearchQuery(null);
                     setFileView(null);
                     setDiffView(null);
                     setSelectedChange(null);
@@ -714,17 +755,92 @@ export default function App() {
                 </button>
               </>
             )}
+            <button
+              className="icon-button viewer-search-toggle"
+              aria-label="Search"
+              title="Search repository"
+              aria-expanded={searchOpen}
+              aria-controls="repository-search"
+              disabled={busy}
+              onClick={() => setSearchOpen((open) => !open)}
+            >
+              <svg
+                className="ui-icon"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                aria-hidden="true"
+              >
+                <circle cx="10.5" cy="10.5" r="6.5" />
+                <path d="m16 16 5 5" />
+              </svg>
+            </button>
           </header>
+          <form
+            id="repository-search"
+            className="repository-search"
+            role="search"
+            hidden={!searchOpen}
+            onSubmit={(event) => {
+              event.preventDefault();
+              cancelPreview();
+              setFileView(null);
+              setDiffView(null);
+              setSelectedChange(null);
+              setViewLabel("Search results");
+              setSearchResult(null);
+              setSearchError(null);
+              setSearchQuery(searchInput.current!.value);
+              setSearchVersion((version) => version + 1);
+            }}
+          >
+            <input
+              ref={searchInput}
+              type="search"
+              aria-label="Search repository"
+              placeholder="Search repository · press Enter"
+              disabled={busy}
+              required
+            />
+          </form>
           {error && (
             <div className="inline-error" role="alert">
               {error}
             </div>
           )}
           <div className="pane-scroll viewer-content">
-            {diffView ? (
+            {searchQuery !== null ? (
+              searchError ? (
+                <div className="inline-error" role="alert">
+                  {searchError}
+                </div>
+              ) : searchResult ? (
+                <SearchResults
+                  result={searchResult}
+                  query={searchQuery}
+                  disabled={busy || previewLoading}
+                  onOpen={(path, line) =>
+                    void openEntry(
+                      {
+                        name: path.slice(path.lastIndexOf("/") + 1),
+                        path,
+                        kind: "blob",
+                        size: null,
+                      },
+                      line,
+                    )
+                  }
+                />
+              ) : (
+                <div className="viewer-loading" role="status">
+                  Searching…
+                </div>
+              )
+            ) : diffView ? (
               <DiffViewer view={diffView} />
             ) : fileView ? (
-              <FileViewer file={fileView} />
+              <FileViewer file={fileView} focusLine={focusLine} />
             ) : busy || previewLoading ? (
               <div className="viewer-loading">Loading…</div>
             ) : (
@@ -866,7 +982,7 @@ export default function App() {
   );
 }
 
-function FileViewer({ file }: { file: FileView }) {
+function FileViewer({ file, focusLine }: { file: FileView; focusLine?: number }) {
   if (file.kind === "binary")
     return (
       <EmptyState
@@ -897,7 +1013,12 @@ function FileViewer({ file }: { file: FileView }) {
           {file.size > MAX_HIGHLIGHT_BYTES && <span>Syntax highlighting disabled</span>}
         </div>
       )}
-      <CodeViewer content={file.content} path={file.path} changes={file.changes} />
+      <CodeViewer
+        content={file.content}
+        path={file.path}
+        changes={file.changes}
+        focusLine={focusLine}
+      />
     </>
   );
 }

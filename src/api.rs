@@ -86,6 +86,21 @@ pub struct FileQuery {
 
 #[derive(Clone, Copy, Deserialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
+pub enum SearchSource {
+    Commit,
+    Worktree,
+}
+
+#[derive(Deserialize)]
+pub struct SearchQuery {
+    pub source: SearchSource,
+    #[serde(default = "head")]
+    pub revision: String,
+    pub query: String,
+}
+
+#[derive(Clone, Copy, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
 pub enum DiffSource {
     Staged,
     Unstaged,
@@ -122,6 +137,7 @@ pub fn routes() -> Router<AppState> {
         .route("/commits", get(commits))
         .route("/tree", get(tree))
         .route("/file", get(file))
+        .route("/search", get(search))
         .route("/status", get(status))
         .route("/diff", get(diff))
         .method_not_allowed_fallback(|| async { git::Error::MethodNotAllowed })
@@ -170,6 +186,22 @@ async fn status(State(state): State<AppState>) -> Result<Json<git::WorkingStatus
     read(state, |repo| git::status(&repo)).await
 }
 
+async fn search(
+    State(state): State<AppState>,
+    query: Result<Query<SearchQuery>, QueryRejection>,
+) -> Result<Json<git::SearchResult>, git::Error> {
+    let Query(query) = query.map_err(|error| git::Error::Invalid(error.body_text()))?;
+    if query.query.is_empty()
+        || query.query.len() > 1024
+        || query.query.contains(['\0', '\n', '\r'])
+    {
+        return Err(git::Error::Invalid(
+            "Search text must be a single nonempty line of at most 1024 bytes".into(),
+        ));
+    }
+    read(state, move |repo| git::search(&repo, query)).await
+}
+
 async fn diff(
     State(state): State<AppState>,
     query: Result<Query<DiffQuery>, QueryRejection>,
@@ -214,6 +246,10 @@ mod tests {
             "/commits?limit=invalid",
             "/diff?source=invalid",
             "/diff?source=staged&statsOnly=invalid",
+            "/search?source=invalid&query=hello",
+            "/search?source=worktree",
+            "/search?source=worktree&query=",
+            "/search?source=worktree&query=one%0Atwo",
         ] {
             let response = app
                 .clone()
