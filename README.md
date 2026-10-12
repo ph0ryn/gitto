@@ -1,6 +1,10 @@
 # gitto
 
-ローカルのGitリポジトリをブラウザーで閲覧する、読み取り専用のCLIです。
+<p align="center">
+  <img src="docs/screenshot.png" alt="gitto screenshot" width="800">
+</p>
+
+ローカルのGitリポジトリをブラウザーで閲覧する、読み取り専用のCLIです。  
 コミット履歴、ブランチ・タグ、ファイル、staged／unstaged／untrackedの差分を表示します。
 
 ## Usage
