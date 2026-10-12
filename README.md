@@ -3,22 +3,15 @@
 ローカルのGitリポジトリをブラウザーで閲覧する、読み取り専用のCLIです。
 コミット履歴、ブランチ・タグ、ファイル、staged／unstaged／untrackedの差分を表示します。
 
-## 起動
+## Usage
 
 ```sh
-nix run . -- .
+nix run github:ph0ryn/gitto#gitto -- .
 ```
 
-開発シェルでは、ビルド済みのコマンドをそのまま使えます。
-
-```sh
-nix develop
-gitto .
-```
-
-指定したパスからGitリポジトリを探すため、サブディレクトリからも起動できます。
 1リポジトリにつき1プロセスで、`127.0.0.1`の空きポートを使います。
-ブラウザーが開き、`Ctrl+C`で終了します。複数のリポジトリを同時に開けます。
+
+インストール後は、`gitto .`で起動できます。
 
 ```sh
 gitto /path/to/repository
@@ -27,13 +20,9 @@ gitto . --port 3000
 gitto --help
 ```
 
-ブラウザーを開けなかった場合は、ターミナルに表示されたURLを手動で開いてください。
-GitコマンドやNode.jsは、ビルド済みバイナリの実行には必要ありません。
-Nixで生成したバイナリはNix storeに依存するため、別のマシンへ単体コピーする配布には使いません。
+## Installation
 
-## インストール
-
-利用するflakeのinputsにgittoを追加します。
+利用する`flake.nix`にgittoのinputを追加します。
 
 ```nix
 inputs.gitto = {
@@ -42,14 +31,7 @@ inputs.gitto = {
 };
 ```
 
-NixOS・nix-darwinの設定では、`overlays.default`を追加して`pkgs.gitto`をインストールします。
-まず、`nixosSystem`または`darwinSystem`に渡す引数へ次の設定を追加します。
-
-```nix
-specialArgs = { inherit inputs; };
-```
-
-設定モジュールでは、渡された`inputs`を使います。
+NixOS・nix-darwinの設定モジュールに、overlayとパッケージを追加します。
 
 ```nix
 { inputs, pkgs, ... }:
@@ -59,50 +41,39 @@ specialArgs = { inherit inputs; };
 }
 ```
 
-overlayは、利用側のnixpkgsを使ってfrontendとCLIをビルドします。
 対応するsystemは`x86_64-linux`・`aarch64-linux`・`aarch64-darwin`です。
 
-## 閲覧
+## Features
 
-- ブランチ・タグを選んで、履歴とファイルツリーを切り替えます。
-- コミットを選ぶと、その時点のツリーと最初の親コミットとの差分を表示します。
-  最初のコミットは空のツリーと比較します。
-  Commits欄の上部に表示される「Back to HEAD」で、現在のHEADと作業ツリーの表示へ戻ります。
-- フォルダーとファイルを選ぶと、内容を表示します。シンボリックリンクはリンク先の文字列を表示します。
-- ファイルと差分に構文ハイライトと行番号を表示します。通常のファイルでは追加・変更・削除位置を行番号の横に示します。
-  作業中はHEADと作業ツリー、履歴では第1親と選択コミットを比較します。
-- 差分は本文1列で表示し、追加・削除の色と記号を行番号の右側に示します。
-  Gitのメタデータ行は省き、コードは通常の構文ハイライトで表示します。
-- 変更一覧では、HEADとindexの差分をStaged、indexと作業ツリーの差分をUnstagedとして表示します。
-  同じファイルに両方の変更がある場合は、それぞれの一覧に表示します。
-- 履歴・ブランチ・変更一覧・ファイルツリー・開いている内容は、約2秒間隔で自動更新します。
-  選択やフォルダーの展開を保ち、非表示のタブでは取得を止め、戻ったときにすぐ更新します。
-  過去のコミットを選んでいる場合は、そのコミットの表示を保ちます。ブランチを閲覧してもcheckoutはしません。
+- ブランチ・タグを選んで、コミット履歴やファイルを閲覧できます。
+- コミットを選んで、過去のファイルやそのコミットの変更内容を確認できます。
+- 作業中の変更を、Staged・Unstaged・Untrackedに分けて確認できます。
+- ファイルと差分を、構文ハイライトと行番号付きで閲覧できます。通常のファイル表示でも変更箇所を確認できます。
+- リポジトリの変更を約2秒ごとに自動で反映します。選択中のコミットやフォルダーの展開は維持されます。
+- 最初のコミットを作る前でも、作業中の変更を確認できます。
 
-コミットがまだないリポジトリでも、作業中の変更を表示できます。
-bareリポジトリでは履歴とコミット済みファイルを閲覧できますが、作業ツリーの操作はありません。
-Gitのcommit・stage・checkout・fetchやファイルの編集は行いません。
+## Limitations
 
-## 表示範囲
+- 閲覧専用です。ファイルの編集やcommit・stage・checkout・fetchはできません。
+- 起動したマシン上のブラウザーで利用します。他のマシンからのアクセスには対応していません。
+- ファイルの内容はUTF-8のテキストのみ表示します。バイナリ、2 MiBを超えるファイル、サブモジュールの内容はプレビューできません。差分の本文は2 MiBまでです。
+- GitのパスやメタデータがUTF-8でない場合は、エラーを表示します。
+- MarkdownやHTMLはテキストとして表示します。MarkdownのプレビューやHTMLの実行はできません。
+- マージコミットの差分は、最初の親コミットと比較します。
+- 競合中のUnstaged差分は、自分側の内容と現在の作業ファイルを比較します。共通の祖先・自分側・相手側を並べる表示はありません。
+- bareリポジトリでは、履歴とコミット済みファイルのみ閲覧できます。
+- シンボリックリンクはリンク先の文字列のみ表示します。作業ツリーの`.git`やリポジトリ外のファイルは閲覧できません。
 
-テキストはUTF-8で表示します。バイナリ、2 MiBを超えるファイル、サブモジュールの内部は表示しません。
-差分の本文も2 MiBまでで、省略した場合は画面に示します。
-Gitのパス・メタデータがUTF-8でない場合は、エラーを表示します。
-Markdownとコードはテキストとして表示し、HTMLを実行しません。
-
-サーバーはloopbackに限定し、起動時に表示したHost以外のリクエストを拒否します。
-Unstagedの競合差分はindexのstage 2（ours）と現在の作業ファイルを比較し、競合マーカーも表示します。
-通常ファイルの変更マークは、競合中もHEADとの比較を使います。
-frontendはMVPのため、base・ours・theirsを並べる3-way表示はありません。
-
-CORSは許可しません。作業ツリーから`.git`やリポジトリ外のファイルを読み出しません。
-
-## 開発
+## Development
 
 RustのCLIとHTTPサーバーをルートに、Vite+・React・TypeScriptを`frontend/`に置きます。
 frontendはpnpmで依存を固定し、`vp`で開発・ビルド・テスト・lint・formatを実行します。
 Gitへのアクセスにはgit2-rsと同梱したlibgit2を使います。
 frontendの生成物はrust-embedで実行ファイルへ埋め込みます。
+
+以下のコマンドは、gittoをcloneしたディレクトリで実行します。
+
+### Development
 
 ```sh
 nix develop
@@ -123,43 +94,9 @@ pnpm exec vp dev
 
 `http://127.0.0.1:5173`を開きます。Viteが`/api`をRustへプロキシします。
 
-## 検証とビルド
+### Build and checks
 
 ```sh
 nix flake check
 nix build
 ```
-
-`nix build`はfrontendのビルドから実行するため、ローカルに生成済みの`dist`は不要です。
-生成したCLIは`./result/bin/gitto`にあります。
-
-個別に確認する場合は、次のコマンドを使います。
-
-```sh
-cargo test
-cargo fmt --all -- --check
-cargo clippy --all-targets -- -D warnings
-(cd frontend && pnpm exec vp test && pnpm exec vp check)
-```
-
-テストはすべてunit testです。Rustは各ソース内、TypeScriptは対象ファイルの隣に置きます。
-Git fixtureや外部リポジトリに依存するテスト、E2Eテストは作りません。
-ライブラリのGit処理を再検証せず、独自の入力検証・状態変換・UIを検証します。
-CLI・HTTP・ブラウザーの連携は、起動後に手動で確認します。
-
-## HTTP API
-
-すべて読み取り専用のGETです。エラーはHTTPステータスと`{"error":"説明"}`で返します。
-`revision`の既定値は`HEAD`です。
-
-| パス | 内容 |
-| --- | --- |
-| `/api/repo` | Gittoのバージョン、名前、パス、HEAD、bare状態、ローカル・remoteブランチとタグ |
-| `/api/commits?revision=HEAD&offset=0&limit=50` | 履歴。`limit`は1〜100 |
-| `/api/tree?revision=HEAD&path=src` | 指定ディレクトリのエントリー |
-| `/api/file?source=commit&revision=HEAD&path=README.md` | ファイル。`source`は`commit`、`index`、`worktree` |
-| `/api/status` | staged、unstaged、untracked、conflictsの一覧 |
-| `/api/diff?source=staged&path=src/main.rs` | 差分。`source`は`staged`、`unstaged`、`untracked`、`worktree`、`commit`。`path`は省略可能 |
-
-`commit`差分では`revision`を指定できます。作業中の差分は常に現在のHEAD・index・作業ツリーを使います。
-`worktree`はHEADから作業ツリーまでの変更をまとめ、未追跡ファイルも含めます。
