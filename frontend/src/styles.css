@@ -626,43 +626,29 @@ summary.tree-row::-webkit-details-marker {
 .change-tree summary:hover {
   background: var(--hover);
 }
+.change-item {
+  display: flex;
+  align-items: center;
+}
 .change-row {
   display: flex;
+  flex: 1;
+  min-width: 0;
   gap: 6px;
 }
 .change-row .tree-name {
   flex: 1;
 }
-.status-dot {
-  display: inline-block;
+.stage-checkbox {
   width: 12px;
   height: 12px;
+  margin: 0 8px 0 0;
   flex-shrink: 0;
-  border: 1px solid var(--muted);
-  border-radius: 1px;
 }
-.status-dot[data-status="added"] {
-  border-color: var(--added);
-}
-.status-dot[data-status="untracked"] {
-  border-color: var(--untracked);
-}
-.status-dot[data-status="deleted"],
-.status-dot[data-status="conflicted"] {
-  border-color: var(--deleted);
-}
-.change-source,
 .change-binary {
   flex-shrink: 0;
   color: var(--muted);
   font-size: 11px;
-}
-.change-source {
-  min-width: 16px;
-  border-radius: 3px;
-  background: var(--sidebar);
-  text-align: center;
-  font-weight: 500;
 }
 .change-stats {
   display: inline-flex;

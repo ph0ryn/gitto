@@ -148,7 +148,7 @@ gittoは、明るい室内で開発者がローカルGitを読み解くような
 
 ## Shapes
 
-ペインと見出しは直線的に組み立て、境界は1pxにする。branch selectは控えめな6px、icon buttonと履歴行は5px、ツリー行と件数バッジは4px、change sourceは3px、status dotは1pxの角丸である。空状態はアイコンやplaceholder markを置かず、短い見出しと説明で示す。
+ペインと見出しは直線的に組み立て、境界は1pxにする。branch selectは控えめな6px、icon buttonと履歴行は5px、ツリー行と件数バッジは4pxの角丸である。空状態はアイコンやplaceholder markを置かず、短い見出しと説明で示す。
 
 ## Components
 
@@ -162,7 +162,7 @@ gittoは、明るい室内で開発者がローカルGitを読み解くような
 
 - **Shape:** 30pxの行、階層ごとの16pxインデント、細いguide line。
 - **Color:** 通常名はtree-ink、Git状態はmodified／added／untracked／deletedの色、選択はselection面で示す。
-- **Behavior:** folderはその場で展開し、兄弟項目とviewerを保つ。ChangesはTracked、Untracked、またはCommitの階層を表示し、Trackedには追加・削除数、stagedにはS、conflictには!を付ける。
+- **Behavior:** folderはその場で展開し、兄弟項目とviewerを保つ。ChangesはTracked、Untracked、またはCommitの階層を表示する。変更状態はファイル名の色で示し、追加・削除数の右に読み取り専用のstaged checkboxを置く。stagedだけをcheckedにし、Commitではcheckboxを表示しない。
 - **Interaction:** 行の選択でviewerにfileまたはdiffを開く。別の内容ボタンは置かない。
 
 ### Viewer heading and source
@@ -182,7 +182,7 @@ gittoは、明るい室内で開発者がローカルGitを読み解くような
 ### Controls and states
 
 - **Icon button:** 30px四方、5pxの角丸、透明な通常面。既存のclose／refreshなどのインラインSVGだけを使い、新しいアイコンセットは導入しない。
-- **Status and paging:** changeのstatus dotはadded／deletedをそれぞれGit状態色で縁取り、Load moreはsurfaceの小さなbuttonとして置き、hoverではhover面と本文色に変える。
+- **Status and paging:** stage状態は標準のdisabled checkboxで表示する。Load moreはsurfaceの小さなbuttonとして置き、hoverではhover面と本文色に変える。
 - **Focus:** キーボードfocusは2pxのaccent輪郭で示し、disabled controlは操作不可と半透明で示す。
 - **Empty and error:** viewerの空状態タイトルは18px、補助ペインでは14pxを使う。empty state、loading、API errorは英語の短い見出しと説明で示す。Gitや作業ツリーを書き換える操作は提供しない。
 

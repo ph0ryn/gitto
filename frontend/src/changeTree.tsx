@@ -1,3 +1,5 @@
+import { memo } from "react";
+
 import EntryIcon from "./entryIcon";
 import { TreeChevron } from "./fileTree";
 
@@ -90,6 +92,26 @@ export function buildChangeDecorations(
   return decorations;
 }
 
+// Keep native checkbox attributes stable while the file preview loads.
+const StageCheckbox = memo(function StageCheckbox({
+  path,
+  staged,
+}: {
+  path: string;
+  staged: boolean;
+}) {
+  return (
+    <input
+      type="checkbox"
+      className="stage-checkbox"
+      aria-label={`Staged: ${path}`}
+      title={staged ? "Staged (read-only)" : "Not staged (read-only)"}
+      checked={staged}
+      disabled
+    />
+  );
+});
+
 export default function ChangeTree({
   nodes,
   disabled,
@@ -137,40 +159,34 @@ export default function ChangeTree({
               </div>
             </details>
           ) : (
-            <button
-              className={`tree-row change-row ${selected === changeKey(node.entry) ? "is-selected" : ""}`}
-              style={{ paddingLeft: 8 + depth * 16 }}
-              title={node.path}
-              data-change={changeDecoration(node.entry.status)}
-              aria-label={`${node.path} diff (${changeLabel(node.entry)} · ${node.entry.status})`}
-              aria-pressed={selected === changeKey(node.entry)}
-              disabled={disabled}
-              onClick={() => onSelect(node.entry)}
-            >
-              <TreeChevron />
-              <EntryIcon name={node.path} kind="blob" />
-              <span className="status-dot" data-status={node.entry.status} aria-hidden="true" />
-              <span className="tree-name">{node.name}</span>
-              {node.entry.source === "staged" && (
-                <small className="change-source" title="Staged">
-                  S
-                </small>
+            <div className="change-item">
+              <button
+                className={`tree-row change-row ${selected === changeKey(node.entry) ? "is-selected" : ""}`}
+                style={{ paddingLeft: 8 + depth * 16 }}
+                title={node.path}
+                data-change={changeDecoration(node.entry.status)}
+                aria-label={`${node.path} diff (${changeLabel(node.entry)} · ${node.entry.status})`}
+                aria-pressed={selected === changeKey(node.entry)}
+                disabled={disabled}
+                onClick={() => onSelect(node.entry)}
+              >
+                <TreeChevron />
+                <EntryIcon name={node.path} kind="blob" />
+                <span className="tree-name">{node.name}</span>
+                {node.entry.stats &&
+                  (node.entry.stats.binary ? (
+                    <small className="change-binary">Binary</small>
+                  ) : (
+                    <span className="change-stats">
+                      <span className="diff-add">+ {node.entry.stats.additions}</span>
+                      <span className="diff-del">− {node.entry.stats.deletions}</span>
+                    </span>
+                  ))}
+              </button>
+              {node.entry.source !== "commit" && (
+                <StageCheckbox path={node.path} staged={node.entry.source === "staged"} />
               )}
-              {node.entry.status === "conflicted" && (
-                <small className="change-source" title="Conflict">
-                  !
-                </small>
-              )}
-              {node.entry.stats &&
-                (node.entry.stats.binary ? (
-                  <small className="change-binary">Binary</small>
-                ) : (
-                  <span className="change-stats">
-                    <span className="diff-add">+ {node.entry.stats.additions}</span>
-                    <span className="diff-del">− {node.entry.stats.deletions}</span>
-                  </span>
-                ))}
-            </button>
+            </div>
           )}
         </li>
       ))}

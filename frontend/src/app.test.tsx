@@ -154,7 +154,8 @@ describe("App", () => {
       "d",
       icons.icons.typescript.body.match(/ d="([^"]+)"/)?.[1],
     );
-    expect(change.querySelector(".status-dot")).toHaveAttribute("data-status", "modified");
+    expect(change).toHaveAttribute("data-change", "modified");
+    expect(change.querySelector(".status-dot")).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "README.md" }));
     const viewer = screen.getByRole("region", { name: "Repository content" });
@@ -168,6 +169,42 @@ describe("App", () => {
         ([input]) => typeof input === "string" && input.startsWith("/api/"),
       ),
     ).toBe(true);
+  });
+
+  it("shows read-only staging checkboxes after change counts", async () => {
+    installFetch({
+      statusData: {
+        staged: [{ path: "staged.ts", oldPath: null, status: "modified" }],
+        unstaged: [{ path: "binary.png", oldPath: null, status: "modified" }],
+        untracked: [{ path: "new.md", oldPath: null, status: "untracked" }],
+        conflicts: [],
+      },
+      stats: {
+        "staged:staged.ts": { additions: 39, deletions: 41 },
+        "unstaged:binary.png": { additions: 0, deletions: 0, binary: true },
+      },
+    });
+    render(<App />);
+
+    const staged = await screen.findByRole("checkbox", { name: "Staged: staged.ts" });
+    expect(staged).toBeChecked();
+    expect(staged).toBeDisabled();
+    const stagedRow = screen.getByRole("button", {
+      name: "staged.ts diff (Staged · modified)",
+    });
+    expect(within(stagedRow).getByText("+ 39")).toBeInTheDocument();
+    const deletions = within(stagedRow).getByText("− 41");
+    expect(
+      deletions.compareDocumentPosition(staged) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(within(stagedRow).queryByText("S")).not.toBeInTheDocument();
+
+    for (const path of ["binary.png", "new.md"]) {
+      const checkbox = screen.getByRole("checkbox", { name: `Staged: ${path}` });
+      expect(checkbox).not.toBeChecked();
+      expect(checkbox).toBeDisabled();
+    }
+    expect(screen.getByText("Binary")).toBeInTheDocument();
   });
 
   it.each([
@@ -1523,6 +1560,7 @@ describe("App", () => {
     expect(within(changes).getByText("2")).toBeInTheDocument();
     expect(within(changes).queryByText("main.ts")).not.toBeInTheDocument();
     expect(within(changes).queryByText("Untracked")).not.toBeInTheDocument();
+    expect(within(changes).queryByRole("checkbox")).not.toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/diff?source=commit&revision=abc123456789&statsOnly=true",
     );
