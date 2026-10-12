@@ -296,9 +296,6 @@ summary.tree-row::-webkit-details-marker {
 .tree-row[data-change="conflicted"] {
   color: var(--deleted);
 }
-.tree-row[data-change] .entry-icon {
-  color: inherit;
-}
 .tree-row.is-selected,
 .commit-row.is-selected {
   background: var(--selection);
@@ -310,64 +307,14 @@ summary.tree-row::-webkit-details-marker {
   color: var(--ink);
 }
 .entry-icon {
-  position: relative;
   display: inline-block;
-  width: 14px;
-  height: 14px;
-  color: var(--muted);
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
 }
-.entry-icon-tree::before {
-  position: absolute;
-  top: 4px;
-  left: 1px;
-  width: 12px;
-  height: 9px;
-  border: 1px solid currentColor;
-  border-radius: 1px;
-  content: "";
-}
-.entry-icon-tree::after {
-  position: absolute;
-  top: 2px;
-  left: 1px;
-  width: 6px;
-  height: 3px;
-  border: 1px solid currentColor;
-  border-bottom: 0;
-  border-radius: 1px 1px 0 0;
-  content: "";
-}
-.entry-icon-blob::before {
-  position: absolute;
-  top: 1px;
-  left: 3px;
-  width: 9px;
-  height: 12px;
-  border: 1px solid currentColor;
-  border-radius: 1px;
-  content: "";
-}
-.entry-icon-symlink::before,
-.entry-icon-submodule::before {
-  position: absolute;
-  top: 7px;
-  left: 1px;
-  width: 12px;
-  height: 1px;
-  background: currentColor;
-  content: "";
-}
-.entry-icon-symlink::after,
-.entry-icon-submodule::after {
-  position: absolute;
-  top: 4px;
-  left: 7px;
-  width: 6px;
-  height: 6px;
-  border-top: 1px solid currentColor;
-  border-right: 1px solid currentColor;
-  transform: rotate(45deg);
-  content: "";
+.change-tree details[open] > summary .entry-icon[data-expanded="false"],
+.change-tree details:not([open]) > summary .entry-icon[data-expanded="true"] {
+  display: none;
 }
 .repo-footer {
   display: flex;

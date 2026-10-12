@@ -1,4 +1,5 @@
 import "@testing-library/jest-dom/vitest";
+import { icons } from "@iconify-json/catppuccin";
 import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
@@ -45,6 +46,29 @@ afterEach(() => {
 });
 
 describe("FileTree refresh", () => {
+  it("renders Catppuccin file types and switches the folder artwork when expanded", async () => {
+    renderTree(vi.fn().mockResolvedValue([]), 0, [folder, file("app.tsx")]);
+    const fileIcon = screen
+      .getByRole("button", { name: "app.tsx" })
+      .querySelector("svg.entry-icon");
+    expect(fileIcon).toHaveAttribute("aria-hidden", "true");
+    expect(fileIcon).toHaveAttribute("viewBox", "0 0 16 16");
+    expect(fileIcon?.querySelector("path")).toHaveAttribute(
+      "d",
+      icons.icons["typescript-react"].body.match(/ d="([^"]+)"/)?.[1],
+    );
+
+    const folderButton = screen.getByRole("button", { name: "src" });
+    const closedArtwork = folderButton.querySelector("svg.entry-icon")?.innerHTML;
+    expect(closedArtwork).toBeTruthy();
+    await userEvent.setup().click(folderButton);
+    expect(folderButton.querySelector("svg.entry-icon")?.innerHTML).not.toBe(closedArtwork);
+    expect(folderButton.querySelector("svg.entry-icon path")).toHaveAttribute(
+      "d",
+      icons.icons["folder-src-open"].body.match(/ d="([^"]+)"/)?.[1],
+    );
+  });
+
   it("exposes the current file without marking expandable folders as current", () => {
     const entries = [folder, file("first.ts"), file("second.ts")];
     const props = {

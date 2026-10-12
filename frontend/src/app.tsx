@@ -9,7 +9,8 @@ import ChangeTree, {
 import CodeViewer from "./codeViewer";
 import { lineChanges, type LineChange } from "./diffLines";
 import DiffViewer, { type DiffFile, type DiffView } from "./diffViewer";
-import FileTree, { EntryIcon, mergeLocalEntries, type TreeEntry } from "./fileTree";
+import EntryIcon from "./entryIcon";
+import FileTree, { mergeLocalEntries, type TreeEntry } from "./fileTree";
 
 type Branch = { name: string; revision: string };
 type Repo = {
@@ -703,7 +704,7 @@ export default function App() {
           <header className="viewer-heading">
             {hasView && (
               <>
-                {fileView && <EntryIcon kind="blob" />}
+                {fileView && fileEntry && <EntryIcon name={viewLabel} kind={fileEntry.kind} />}
                 <h2 title={viewLabel} aria-label={viewLabel}>
                   <span className="viewer-directory">
                     {viewLabel.slice(0, viewLabel.lastIndexOf("/") + 1)}

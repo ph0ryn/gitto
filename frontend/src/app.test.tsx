@@ -1,4 +1,5 @@
 import "@testing-library/jest-dom/vitest";
+import { icons } from "@iconify-json/catppuccin";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
@@ -141,6 +142,34 @@ afterEach(() => {
 });
 
 describe("App", () => {
+  it("shows Catppuccin artwork in changes and the file viewer", async () => {
+    const fetchMock = installFetch();
+    const user = userEvent.setup();
+    render(<App />);
+
+    const change = await screen.findByRole("button", {
+      name: "src/main.ts diff (Staged · modified)",
+    });
+    expect(change.querySelector("svg.entry-icon path")).toHaveAttribute(
+      "d",
+      icons.icons.typescript.body.match(/ d="([^"]+)"/)?.[1],
+    );
+    expect(change.querySelector(".status-dot")).toHaveAttribute("data-status", "modified");
+
+    await user.click(screen.getByRole("button", { name: "README.md" }));
+    const viewer = screen.getByRole("region", { name: "Repository content" });
+    await within(viewer).findByRole("heading", { name: "README.md" });
+    expect(viewer.querySelector("header svg.entry-icon path")).toHaveAttribute(
+      "d",
+      icons.icons.readme.body.match(/ d="([^"]+)"/)?.[1],
+    );
+    expect(
+      fetchMock.mock.calls.every(
+        ([input]) => typeof input === "string" && input.startsWith("/api/"),
+      ),
+    ).toBe(true);
+  });
+
   it.each([
     { hour: 0, time: "00:05" },
     { hour: 14, time: "14:05" },

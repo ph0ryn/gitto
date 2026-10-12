@@ -1,4 +1,5 @@
-import { EntryIcon, TreeChevron } from "./fileTree";
+import EntryIcon from "./entryIcon";
+import { TreeChevron } from "./fileTree";
 
 export type ChangeEntry = {
   path: string;
@@ -117,7 +118,8 @@ export default function ChangeTree({
                 data-change={decorations.get(node.path)}
               >
                 <TreeChevron expanded />
-                <EntryIcon kind="tree" />
+                <EntryIcon name={node.path} kind="tree" />
+                <EntryIcon name={node.path} kind="tree" expanded />
                 <span>{node.name}</span>
               </summary>
               <div
@@ -146,6 +148,7 @@ export default function ChangeTree({
               onClick={() => onSelect(node.entry)}
             >
               <TreeChevron />
+              <EntryIcon name={node.path} kind="blob" />
               <span className="status-dot" data-status={node.entry.status} aria-hidden="true" />
               <span className="tree-name">{node.name}</span>
               {node.entry.source === "staged" && (

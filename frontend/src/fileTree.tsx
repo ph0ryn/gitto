@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
+import EntryIcon from "./entryIcon";
+
 export type TreeEntry = {
   name: string;
   path: string;
@@ -32,10 +34,6 @@ export function mergeLocalEntries(entries: TreeEntry[], paths: string[], parentP
     }
   }
   return [...merged.values()];
-}
-
-export function EntryIcon({ kind }: { kind: TreeEntry["kind"] }) {
-  return <span aria-hidden="true" className={`entry-icon entry-icon-${kind}`} />;
 }
 
 export function TreeChevron({ expanded }: { expanded?: boolean }) {
@@ -184,7 +182,7 @@ function FileTreeItem({
         onClick={select}
       >
         <TreeChevron expanded={folder ? expanded : undefined} />
-        <EntryIcon kind={entry.kind} />
+        <EntryIcon name={entry.name} kind={entry.kind} expanded={expanded} />
         <span>{entry.name}</span>
       </button>
       <div
