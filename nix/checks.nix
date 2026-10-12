@@ -11,6 +11,8 @@ let
       [
         ../Cargo.lock
         ../Cargo.toml
+        ../LICENSE
+        ../THIRD_PARTY_NOTICES.txt
         ../src
       ]
       ++ pkgs.lib.optional (builtins.pathExists ../README.md) ../README.md

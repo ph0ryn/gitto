@@ -21,6 +21,7 @@ nix run github:ph0ryn/gitto#gitto -- .
 gitto /path/to/repository
 gitto . --no-open
 gitto . --port 3000
+gitto --licenses
 gitto --help
 ```
 

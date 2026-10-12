@@ -13,6 +13,9 @@ pub struct Cli {
     /// Print the URL without opening a browser
     #[arg(long)]
     pub no_open: bool,
+    /// Print gitto's license and third-party notices
+    #[arg(long, exclusive = true)]
+    pub licenses: bool,
 }
 
 #[cfg(test)]
@@ -25,6 +28,7 @@ mod tests {
         assert_eq!(cli.path, PathBuf::from("."));
         assert_eq!(cli.port, 0);
         assert!(!cli.no_open);
+        assert!(!cli.licenses);
     }
 
     #[test]
@@ -33,5 +37,26 @@ mod tests {
         assert_eq!(cli.port, 3000);
         assert!(cli.no_open);
         assert!(Cli::try_parse_from(["gitto", "--port", "65536"]).is_err());
+    }
+
+    #[test]
+    fn help_lists_the_licenses_option() {
+        let help = Cli::try_parse_from(["gitto", "--help"]).unwrap_err();
+        assert!(help.to_string().contains("--licenses"));
+    }
+
+    #[test]
+    fn licenses_option_preserves_repository_paths_and_rejects_other_arguments() {
+        let cli = Cli::try_parse_from(["gitto", "--licenses"]).unwrap();
+        assert!(cli.licenses);
+
+        for path in ["licenses", "./licenses"] {
+            let cli = Cli::try_parse_from(["gitto", path]).unwrap();
+            assert_eq!(cli.path, PathBuf::from(path));
+            assert!(!cli.licenses);
+        }
+
+        assert!(Cli::try_parse_from(["gitto", ".", "--licenses"]).is_err());
+        assert!(Cli::try_parse_from(["gitto", "--no-open", "--licenses"]).is_err());
     }
 }
