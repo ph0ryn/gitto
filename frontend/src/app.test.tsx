@@ -113,7 +113,9 @@ function installFetch(
           const entries =
             source === "staged"
               ? statusData.staged
-              : [...statusData.unstaged, ...statusData.conflicts];
+              : source === "untracked"
+                ? statusData.untracked
+                : [...statusData.unstaged, ...statusData.conflicts];
           return response({
             patch: "",
             truncated: false,
@@ -142,6 +144,45 @@ afterEach(() => {
 });
 
 describe("App", () => {
+  it("shows total line counts in tracked and untracked category headers", async () => {
+    installFetch({
+      statusData: {
+        staged: [{ path: "main.ts", oldPath: null, status: "modified" }],
+        unstaged: [
+          { path: "main.ts", oldPath: null, status: "modified" },
+          { path: "image.png", oldPath: null, status: "modified" },
+        ],
+        untracked: [
+          { path: "new.md", oldPath: null, status: "untracked" },
+          { path: "empty.md", oldPath: null, status: "untracked" },
+          { path: "new.png", oldPath: null, status: "untracked" },
+        ],
+        conflicts: [{ path: "conflict.ts", oldPath: null, status: "conflicted" }],
+      },
+      stats: {
+        "staged:main.ts": { additions: 4, deletions: 2 },
+        "unstaged:main.ts": { additions: 8, deletions: 3 },
+        "unstaged:conflict.ts": { additions: 5, deletions: 7 },
+        "unstaged:image.png": { additions: 0, deletions: 0, binary: true },
+        "untracked:new.md": { additions: 12, deletions: 0 },
+        "untracked:empty.md": { additions: 0, deletions: 0 },
+        "untracked:new.png": { additions: 0, deletions: 0, binary: true },
+      },
+    });
+    const user = userEvent.setup();
+    render(<App />);
+
+    const tracked = (await screen.findByText("Tracked")).closest("summary")!;
+    const untracked = screen.getByText("Untracked").closest("summary")!;
+    expect(within(tracked).getByText("+ 17")).toBeInTheDocument();
+    expect(within(tracked).getByText("− 12")).toBeInTheDocument();
+    expect(within(untracked).getByText("+ 12")).toBeInTheDocument();
+    expect(within(untracked).getByText("− 0")).toBeInTheDocument();
+    await user.click(tracked);
+    expect(tracked.parentElement).not.toHaveAttribute("open");
+    expect(within(tracked).getByText("+ 17")).toBeVisible();
+  });
+
   it("shows Catppuccin artwork in changes and the file viewer", async () => {
     const fetchMock = installFetch();
     const user = userEvent.setup();
@@ -1561,6 +1602,9 @@ describe("App", () => {
     ).toHaveAttribute("data-change", "deleted");
     expect(within(renamed).getByText("+ 9")).toBeInTheDocument();
     expect(within(renamed).getByText("− 2")).toBeInTheDocument();
+    const commitSummary = within(changes).getByText("Commit").closest("summary")!;
+    expect(within(commitSummary).getByText("+ 9")).toBeInTheDocument();
+    expect(within(commitSummary).getByText("− 9")).toBeInTheDocument();
     expect(within(changes).getByText("2")).toBeInTheDocument();
     expect(within(changes).queryByText("main.ts")).not.toBeInTheDocument();
     expect(within(changes).queryByText("Untracked")).not.toBeInTheDocument();

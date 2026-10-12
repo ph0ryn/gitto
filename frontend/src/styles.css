@@ -130,7 +130,7 @@ h2 {
   font-weight: 600;
 }
 .column-heading > span,
-.change-group > summary span {
+.change-group > summary > .change-stats {
   color: var(--muted);
   font-size: 11px;
   font-weight: 500;
@@ -633,6 +633,9 @@ summary.tree-row::-webkit-details-marker {
   color: var(--muted);
   font-size: 11px;
   font-weight: 600;
+}
+.change-group > summary > .change-stats {
+  float: right;
 }
 .change-group > .tree-list {
   padding-top: 3px;

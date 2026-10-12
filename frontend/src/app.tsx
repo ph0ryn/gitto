@@ -69,10 +69,10 @@ async function api<T>(url: string, signal?: AbortSignal): Promise<T> {
 
 async function loadStatus(signal?: AbortSignal): Promise<Status> {
   const status = await api<Status>("/api/status", signal);
-  const [stagedStats, unstagedStats] = await Promise.all(
-    (["staged", "unstaged"] as const).map(async (source) => {
+  const [stagedStats, unstagedStats, untrackedStats] = await Promise.all(
+    (["staged", "unstaged", "untracked"] as const).map(async (source) => {
       const entries =
-        source === "staged" ? status.staged : [...status.unstaged, ...status.conflicts];
+        source === "unstaged" ? [...status.unstaged, ...status.conflicts] : status[source];
       if (entries.length === 0) return new Map<string, DiffFile>();
       const diff = await api<DiffView>(`/api/diff?source=${source}&statsOnly=true`, signal);
       return new Map(diff.files.map((file) => [file.path, file]));
@@ -89,6 +89,7 @@ async function loadStatus(signal?: AbortSignal): Promise<Status> {
     ...status,
     staged: withStats(status.staged, stagedStats),
     unstaged: withStats(status.unstaged, unstagedStats),
+    untracked: withStats(status.untracked, untrackedStats),
     conflicts: withStats(status.conflicts, unstagedStats),
   };
 }
@@ -575,6 +576,13 @@ export default function App() {
       .filter((group) => group.entries.length > 0)
       .map((group) => ({
         label: group.label,
+        stats: group.entries.reduce(
+          (total, entry) => ({
+            additions: total.additions + entry.stats!.additions,
+            deletions: total.deletions + entry.stats!.deletions,
+          }),
+          { additions: 0, deletions: 0 },
+        ),
         nodes: buildChangeTree(group.entries),
         decorations: buildChangeDecorations(group.entries),
       }));
@@ -771,7 +779,13 @@ export default function App() {
             ) : (
               changeGroups.map((group) => (
                 <details key={group.label} className="change-group" open>
-                  <summary>{group.label}</summary>
+                  <summary>
+                    {group.label}
+                    <span className="change-stats">
+                      <span className="diff-add">+ {group.stats.additions}</span>
+                      <span className="diff-del">− {group.stats.deletions}</span>
+                    </span>
+                  </summary>
                   <ChangeTree
                     nodes={group.nodes}
                     disabled={busy}
