@@ -297,6 +297,7 @@ summary.tree-row::-webkit-details-marker {
   color: var(--deleted);
 }
 .tree-row.is-selected,
+.change-item:has(> .is-selected),
 .commit-row.is-selected {
   background: var(--selection);
 }
@@ -646,6 +647,7 @@ summary.tree-row::-webkit-details-marker {
 .change-item {
   display: flex;
   align-items: center;
+  border-radius: 4px;
 }
 .change-row {
   display: flex;
