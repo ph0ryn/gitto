@@ -280,6 +280,7 @@ summary.tree-row::-webkit-details-marker {
   font-size: 11px;
 }
 .tree-row:hover:not(.is-selected),
+.change-item:hover,
 .commit-row:hover:not(.is-selected) {
   background: var(--hover);
 }
