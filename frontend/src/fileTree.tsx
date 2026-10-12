@@ -82,6 +82,7 @@ function FileTreeItem({
   const [expanded, setExpanded] = useState(false);
   const [children, setChildren] = useState<TreeEntry[] | null>(null);
   const [loading, setLoading] = useState(false);
+  const initialLoading = loading && children === null;
   const refreshVersion = props.refreshVersion ?? 0;
   const folder = entry.kind === "tree";
   const loaded = useRef<{
@@ -179,7 +180,7 @@ function FileTreeItem({
         title={entry.path}
         data-change={props.decorations?.get(entry.path)}
         aria-description={props.decorations?.get(entry.path)}
-        disabled={props.disabled || loading}
+        disabled={props.disabled || initialLoading}
         onClick={select}
       >
         <TreeChevron expanded={folder ? expanded : undefined} />
@@ -191,7 +192,7 @@ function FileTreeItem({
         hidden={!expanded}
         style={{ "--guide-left": `${15 + depth * 16}px` } as React.CSSProperties}
       >
-        {loading && (
+        {initialLoading && (
           <p className="tree-loading" style={{ paddingLeft: 24 + depth * 16 }}>
             Loading…
           </p>

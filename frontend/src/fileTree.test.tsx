@@ -81,8 +81,11 @@ describe("FileTree refresh", () => {
     const view = renderTree(loadChildren);
 
     await user.click(screen.getByRole("button", { name: "src" }));
+    expect(screen.getByText("Loading…")).toBeVisible();
+    expect(screen.getByRole("button", { name: "src" })).toBeDisabled();
     await act(async () => initial.resolve([file("old.ts")]));
-    expect(screen.getByRole("button", { name: "old.ts" })).toBeVisible();
+    const oldFile = screen.getByRole("button", { name: "old.ts" });
+    expect(oldFile).toBeVisible();
 
     view.rerender(
       <FileTree
@@ -95,7 +98,11 @@ describe("FileTree refresh", () => {
       />,
     );
     expect(loadChildren).toHaveBeenCalledTimes(2);
-    expect(screen.getByRole("button", { name: "old.ts" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "old.ts" })).toBe(oldFile);
+    expect(oldFile).toBeVisible();
+    expect(screen.queryByText("Loading…")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "src" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "src" })).toHaveAttribute("aria-busy", "true");
     expect(screen.getByRole("button", { name: "src" })).toHaveAttribute("aria-expanded", "true");
 
     await act(async () => refreshed.resolve([file("new.ts")]));
@@ -104,6 +111,37 @@ describe("FileTree refresh", () => {
     );
     expect(screen.getByRole("button", { name: "new.ts" })).toBeVisible();
     expect(screen.getByRole("button", { name: "src" })).toHaveAttribute("aria-expanded", "true");
+  });
+
+  it("allows collapsing a folder during refresh and ignores the cancelled result", async () => {
+    const refreshed = deferred<TreeEntry[]>();
+    const loadChildren = vi
+      .fn<(entry: TreeEntry) => Promise<TreeEntry[]>>()
+      .mockResolvedValueOnce([file("cached.ts")])
+      .mockReturnValueOnce(refreshed.promise)
+      .mockResolvedValueOnce([file("latest.ts")]);
+    const props = {
+      entries: [folder],
+      disabled: false,
+      loadChildren,
+      onSelect: vi.fn(),
+      onError: vi.fn(),
+    };
+    const user = userEvent.setup();
+    const view = render(<FileTree {...props} />);
+    const folderButton = screen.getByRole("button", { name: "src" });
+
+    await user.click(folderButton);
+    expect(await screen.findByRole("button", { name: "cached.ts" })).toBeVisible();
+    view.rerender(<FileTree {...props} refreshVersion={1} />);
+    await user.click(folderButton);
+    expect(folderButton).toHaveAttribute("aria-expanded", "false");
+
+    await act(async () => refreshed.resolve([file("cancelled.ts")]));
+    expect(screen.queryByText("cancelled.ts")).not.toBeInTheDocument();
+    await user.click(folderButton);
+    expect(await screen.findByRole("button", { name: "latest.ts" })).toBeVisible();
+    expect(props.onError).not.toHaveBeenCalled();
   });
 
   it("does not duplicate a pending refresh and reloads on the next refresh", async () => {
