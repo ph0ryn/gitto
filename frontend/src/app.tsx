@@ -1,14 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import FileTree, { EntryIcon, mergeLocalEntries, type TreeEntry } from "./fileTree";
-import CodeViewer from "./codeViewer";
-import DiffViewer, { type DiffFile, type DiffView } from "./diffViewer";
-import { lineChanges, type LineChange } from "./diffLines";
+
 import ChangeTree, {
   buildChangeTree,
   buildChangeDecorations,
   changeKey,
   type ChangeEntry,
 } from "./changeTree";
+import CodeViewer from "./codeViewer";
+import { lineChanges, type LineChange } from "./diffLines";
+import DiffViewer, { type DiffFile, type DiffView } from "./diffViewer";
+import FileTree, { EntryIcon, mergeLocalEntries, type TreeEntry } from "./fileTree";
 
 type Branch = { name: string; revision: string };
 type Repo = {

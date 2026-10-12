@@ -1,4 +1,5 @@
 import { useMemo, type CSSProperties } from "react";
+
 import { highlightCode } from "./codeViewer";
 import { parseDiff, type DiffLine } from "./diffLines";
 

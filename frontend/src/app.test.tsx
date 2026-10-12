@@ -2,7 +2,9 @@ import "@testing-library/jest-dom/vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
+
 import App from "./app";
+
 import type { TreeEntry } from "./fileTree";
 
 const repo = {

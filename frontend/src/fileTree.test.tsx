@@ -2,6 +2,7 @@ import "@testing-library/jest-dom/vitest";
 import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
+
 import FileTree, { type TreeEntry } from "./fileTree";
 
 const folder: TreeEntry = { name: "src", path: "src", kind: "tree", size: null };

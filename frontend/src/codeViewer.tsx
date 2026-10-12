@@ -1,7 +1,8 @@
-import { useMemo } from "react";
 import hljs from "highlight.js/lib/common";
 import nix from "highlight.js/lib/languages/nix";
+import { useMemo } from "react";
 import "highlight.js/styles/github.css";
+
 import type { LineChange } from "./diffLines";
 
 hljs.registerLanguage("nix", nix);
