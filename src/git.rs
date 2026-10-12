@@ -109,6 +109,7 @@ pub struct DiffFile {
     additions: usize,
     deletions: usize,
     binary: bool,
+    too_large: bool,
 }
 
 #[derive(Serialize)]
@@ -586,13 +587,7 @@ fn delta_name(status: Delta) -> &'static str {
 
 pub fn diff(repo: &Repository, query: DiffQuery) -> Result<DiffResult, Error> {
     let mut options = DiffOptions::new();
-    options
-        .include_typechange(true)
-        .max_size(if query.stats_only {
-            -1
-        } else {
-            MAX_CONTENT as i64
-        });
+    options.include_typechange(true).max_size(-1);
     if let Some(path) = &query.path {
         validate_path(path, false)?;
     }
@@ -721,6 +716,7 @@ pub fn diff(repo: &Repository, query: DiffQuery) -> Result<DiffResult, Error> {
             additions,
             deletions,
             binary: delta.flags().contains(git2::DiffFlags::BINARY),
+            too_large: false,
         };
         append_file(&mut result, file, patch.as_mut(), query.stats_only)?;
         if result.truncated {
@@ -754,12 +750,25 @@ fn conflict_entry(conflict: &git2::IndexConflict) -> Result<&git2::IndexEntry, E
 
 fn append_file(
     result: &mut DiffResult,
-    file: DiffFile,
+    mut file: DiffFile,
     patch: Option<&mut git2::Patch<'_>>,
     stats_only: bool,
 ) -> Result<(), Error> {
+    file.too_large = !file.binary
+        && patch.as_ref().is_some_and(|patch| {
+            if patch.num_hunks() == 0 {
+                return false;
+            }
+            let delta = patch.delta();
+            delta.old_file().size() > MAX_CONTENT as u64
+                || delta.new_file().size() > MAX_CONTENT as u64
+        });
+    let too_large = file.too_large;
     result.files.push(file);
-    if !stats_only && let Some(patch) = patch {
+    if !stats_only
+        && !too_large
+        && let Some(patch) = patch
+    {
         append_patch(result, patch)?;
     }
     Ok(())
@@ -845,6 +854,7 @@ fn append_conflicts(
             additions: 0,
             deletions: 0,
             binary: submodule,
+            too_large: false,
         };
         if submodule {
             result.files.push(file);
@@ -863,26 +873,18 @@ fn append_conflicts(
             conflict.our.as_ref().map(|entry| entry.id)
         };
         let old = match old_id {
-            Some(id) => {
-                let size = repo.odb()?.read_header(id)?.0;
-                if !stats_only && size > MAX_CONTENT {
-                    file.binary = true;
-                    result.files.push(file);
-                    continue;
-                }
-                Some(repo.find_blob(id)?)
-            }
+            Some(id) => Some(repo.find_blob(id)?),
             None => None,
         };
-        let new = match worktree_file(repo, conflict_path, !stats_only) {
+        let new = match worktree_file(repo, conflict_path, false) {
             Ok(file) => file,
             Err(Error::Io(error)) if error.kind() == std::io::ErrorKind::NotFound => {
                 content(conflict_path.into(), &[], 0)
             }
             Err(error) => return Err(error),
         };
-        if new.kind != "text" || old.as_ref().is_some_and(|blob| blob.is_binary()) {
-            file.binary = true;
+        file.binary = new.kind != "text" || old.as_ref().is_some_and(|blob| blob.is_binary());
+        if file.binary {
             result.files.push(file);
             continue;
         }
@@ -894,7 +896,7 @@ fn append_conflicts(
             .ok_or_else(|| Error::Unsupported("Text content is missing".into()))?
             .as_bytes();
         let mut options = DiffOptions::new();
-        options.max_size(if stats_only { -1 } else { MAX_CONTENT as i64 });
+        options.max_size(-1);
         let mut patch = git2::Patch::from_buffers(
             old_bytes,
             Some(Path::new(conflict_path)),
@@ -939,6 +941,7 @@ mod tests {
             additions: 1,
             deletions: 1,
             binary: false,
+            too_large: false,
         };
         append_file(&mut result, file, Some(&mut patch), true).unwrap();
         assert_eq!(result.files.len(), 1);
@@ -946,6 +949,182 @@ mod tests {
         assert_eq!(result.files[0].deletions, 1);
         assert!(result.patch.is_empty());
         assert!(!result.truncated);
+    }
+
+    #[test]
+    fn oversized_text_diff_keeps_statistics_without_serializing_body() {
+        let mut result = DiffResult {
+            patch: String::new(),
+            files: Vec::new(),
+            truncated: false,
+        };
+        for (old_size, new_size) in [(MAX_CONTENT + 1, 0), (0, MAX_CONTENT + 1)] {
+            let old = vec![b'x'; old_size];
+            let new = vec![b'y'; new_size];
+            let mut patch = git2::Patch::from_buffers(
+                &old,
+                Some(Path::new("file")),
+                &new,
+                Some(Path::new("file")),
+                None,
+            )
+            .unwrap();
+            let (_, additions, deletions) = patch.line_stats().unwrap();
+            let file = DiffFile {
+                path: "file".into(),
+                old_path: None,
+                status: "modified",
+                additions,
+                deletions,
+                binary: false,
+                too_large: false,
+            };
+
+            append_file(&mut result, file, Some(&mut patch), false).unwrap();
+
+            let file = result.files.last().unwrap();
+            assert!(file.too_large);
+            assert!(!file.binary);
+            assert_eq!(file.additions, additions);
+            assert_eq!(file.deletions, deletions);
+            assert!(result.patch.is_empty());
+            assert!(!result.truncated);
+        }
+
+        let mut following_patch = git2::Patch::from_buffers(
+            b"old\n",
+            Some(Path::new("following")),
+            b"new\n",
+            Some(Path::new("following")),
+            None,
+        )
+        .unwrap();
+        let (_, additions, deletions) = following_patch.line_stats().unwrap();
+        let following_file = DiffFile {
+            path: "following".into(),
+            old_path: None,
+            status: "modified",
+            additions,
+            deletions,
+            binary: false,
+            too_large: false,
+        };
+        append_file(
+            &mut result,
+            following_file,
+            Some(&mut following_patch),
+            false,
+        )
+        .unwrap();
+        assert_eq!(result.files.len(), 3);
+        assert!(result.patch.contains("+new\n"));
+    }
+
+    #[test]
+    fn append_file_keeps_boundary_text_and_binary_distinct() {
+        let mut boundary_result = DiffResult {
+            patch: String::new(),
+            files: Vec::new(),
+            truncated: false,
+        };
+        let boundary_bytes = vec![b'x'; MAX_CONTENT];
+        let mut boundary_patch = git2::Patch::from_buffers(
+            &boundary_bytes,
+            Some(Path::new("boundary")),
+            b"",
+            Some(Path::new("boundary")),
+            None,
+        )
+        .unwrap();
+        append_file(
+            &mut boundary_result,
+            DiffFile {
+                path: "boundary".into(),
+                old_path: None,
+                status: "modified",
+                additions: 0,
+                deletions: 1,
+                binary: false,
+                too_large: false,
+            },
+            Some(&mut boundary_patch),
+            false,
+        )
+        .unwrap();
+        assert!(!boundary_result.files[0].binary);
+        assert!(!boundary_result.files[0].too_large);
+
+        let mut binary_result = DiffResult {
+            patch: String::new(),
+            files: Vec::new(),
+            truncated: false,
+        };
+        let mut binary_bytes = vec![b'x'; MAX_CONTENT + 1];
+        binary_bytes[0] = 0;
+        let mut binary_patch = git2::Patch::from_buffers(
+            &binary_bytes,
+            Some(Path::new("binary")),
+            b"",
+            Some(Path::new("binary")),
+            None,
+        )
+        .unwrap();
+        append_file(
+            &mut binary_result,
+            DiffFile {
+                path: "binary".into(),
+                old_path: None,
+                status: "modified",
+                additions: 0,
+                deletions: 0,
+                binary: true,
+                too_large: false,
+            },
+            Some(&mut binary_patch),
+            false,
+        )
+        .unwrap();
+        assert!(binary_result.files[0].binary);
+        assert!(!binary_result.files[0].too_large);
+    }
+
+    #[test]
+    fn identical_large_buffers_with_different_paths_are_not_too_large() {
+        let bytes = vec![b'x'; MAX_CONTENT + 1];
+        let mut patch = git2::Patch::from_buffers(
+            &bytes,
+            Some(Path::new("old")),
+            &bytes,
+            Some(Path::new("new")),
+            None,
+        )
+        .unwrap();
+        assert_eq!(patch.num_hunks(), 0);
+        let mut result = DiffResult {
+            patch: String::new(),
+            files: Vec::new(),
+            truncated: false,
+        };
+
+        append_file(
+            &mut result,
+            DiffFile {
+                path: "new".into(),
+                old_path: Some("old".into()),
+                status: "renamed",
+                additions: 0,
+                deletions: 0,
+                binary: false,
+                too_large: false,
+            },
+            Some(&mut patch),
+            false,
+        )
+        .unwrap();
+
+        assert!(!result.files[0].too_large);
+        assert!(!result.truncated);
+        assert!(result.patch.is_empty());
     }
 
     #[test]

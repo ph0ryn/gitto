@@ -9,10 +9,18 @@ hljs.registerLanguage("nix", nix);
 hljs.registerAliases(["jsx", "mjs", "cjs"], { languageName: "javascript" });
 hljs.registerAliases(["tsx", "mts", "cts"], { languageName: "typescript" });
 
-export function highlightCode(content: string, path: string) {
+// shortcut: synchronous highlighting is limited to 16 KiB, revisit after moving work off the UI thread.
+export const MAX_HIGHLIGHT_BYTES = 16 * 1024;
+
+export function highlightCode(content: string, path: string, enabled = true) {
   const name = path.slice(path.lastIndexOf("/") + 1).toLowerCase();
   const extension = name.slice(name.lastIndexOf(".") + 1);
-  const language = hljs.getLanguage(extension) ? extension : "plaintext";
+  const language =
+    enabled &&
+    new TextEncoder().encode(content).length <= MAX_HIGHLIGHT_BYTES &&
+    hljs.getLanguage(extension)
+      ? extension
+      : "plaintext";
   const result = hljs.highlight(content, { language });
   if (result.errorRaised) throw result.errorRaised;
   // Preserve CRLF when the highlighted HTML is parsed by the browser.

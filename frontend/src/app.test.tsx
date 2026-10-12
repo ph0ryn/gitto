@@ -80,6 +80,7 @@ function installFetch(
         additions: 1,
         deletions: 1,
         binary: false,
+        tooLarge: false,
       },
     ],
     truncated: false,
@@ -103,7 +104,7 @@ function installFetch(
           path: new URL(url, "http://localhost").searchParams.get("path"),
           kind: "text",
           content: options.fileContent ?? "# gitto\n",
-          size: 7,
+          size: new TextEncoder().encode(options.fileContent ?? "# gitto\n").length,
         });
       if (url.startsWith("/api/diff")) {
         const query = new URL(url, "http://localhost").searchParams;
@@ -124,6 +125,7 @@ function installFetch(
               additions: 1,
               deletions: 1,
               binary: false,
+              tooLarge: false,
               ...options.stats?.[`${source}:${entry.path}`],
             })),
           });
@@ -557,6 +559,7 @@ describe("App", () => {
             additions: 1,
             deletions: 1,
             binary: false,
+            tooLarge: false,
           },
         ],
         truncated: false,
@@ -873,6 +876,7 @@ describe("App", () => {
             additions: 1,
             deletions: 1,
             binary: false,
+            tooLarge: false,
           },
         ],
         truncated: false,
@@ -911,6 +915,73 @@ describe("App", () => {
     expect(document.querySelector(".code-view .hljs-keyword")).toHaveTextContent("const");
     expect(document.querySelector(".line-numbers")).toHaveTextContent("1 2 3");
     expect(document.querySelector(".line-numbers")).toHaveAttribute("aria-hidden", "true");
+  });
+
+  it("explains disabled syntax highlighting while preserving a large file", async () => {
+    const content = `const name = "${"語".repeat(6000)}";\n`;
+    installFetch({
+      fileContent: content,
+      trees: { "": [{ name: "main.ts", path: "main.ts", kind: "blob", size: 18000 }] },
+    });
+    render(<App />);
+    await userEvent.setup().click(await screen.findByRole("button", { name: "main.ts" }));
+
+    expect(await screen.findByText("Syntax highlighting disabled")).toBeInTheDocument();
+    expect(document.querySelector(".code-view code")?.textContent).toBe(content);
+    expect(document.querySelector(".hljs-keyword")).not.toBeInTheDocument();
+  });
+
+  it("marks omitted changes when the previous file exceeds the diff input limit", async () => {
+    installFetch({
+      diffData: {
+        patch: "",
+        truncated: false,
+        files: [
+          {
+            path: "README.md",
+            oldPath: null,
+            status: "modified",
+            additions: 1,
+            deletions: 60000,
+            binary: false,
+            tooLarge: true,
+          },
+        ],
+      },
+    });
+    render(<App />);
+    await userEvent.setup().click(await screen.findByRole("button", { name: "README.md" }));
+
+    expect(await screen.findByText("Change markers truncated")).toBeInTheDocument();
+    expect(document.querySelector(".code-view code")?.textContent).toBe("# gitto\n");
+  });
+
+  it("keeps oversized commit statistics while explaining the omitted diff body", async () => {
+    installFetch({
+      diffData: {
+        patch: "",
+        truncated: false,
+        files: [
+          {
+            path: "large.ts",
+            oldPath: null,
+            status: "modified",
+            additions: 30000,
+            deletions: 20000,
+            binary: false,
+            tooLarge: true,
+          },
+        ],
+      },
+    });
+    render(<App />);
+    await userEvent.setup().click(await screen.findByRole("button", { name: /最初のコミット/ }));
+
+    expect(await screen.findByText("Diff exceeds the 2 MiB preview limit")).toBeInTheDocument();
+    const entry = screen.getByRole("button", { name: "large.ts diff (Commit · modified)" });
+    expect(within(entry).getByText("+ 30000")).toBeInTheDocument();
+    expect(within(entry).getByText("− 20000")).toBeInTheDocument();
+    expect(screen.queryByText("Binary diff")).not.toBeInTheDocument();
   });
 
   it("opens working content with changes against HEAD and shows its changed line", async () => {
@@ -1329,7 +1400,7 @@ describe("App", () => {
     const details = [
       within(footer).getByText(repo.path),
       within(footer).getByText("HEAD · abc1234"),
-      within(footer).getByText("7 B"),
+      within(footer).getByText("8 B"),
       within(footer).getByText("Gitto"),
       within(footer).getByText("A read-only local Git browser"),
       within(footer).getByText(`v${repo.appVersion}`),
@@ -1344,7 +1415,7 @@ describe("App", () => {
     expect(details[1]).toHaveAttribute("title", commits.commits[0].id);
 
     await user.click(screen.getByRole("button", { name: "Close view" }));
-    expect(within(footer).queryByText("7 B")).not.toBeInTheDocument();
+    expect(within(footer).queryByText("8 B")).not.toBeInTheDocument();
   });
 
   it("places files, content, changes, and history in the requested reading order", async () => {
@@ -1569,6 +1640,7 @@ describe("App", () => {
         additions: 9,
         deletions: 2,
         binary: false,
+        tooLarge: false,
       },
       {
         path: "history/deleted.ts",
@@ -1577,6 +1649,7 @@ describe("App", () => {
         additions: 0,
         deletions: 7,
         binary: false,
+        tooLarge: false,
       },
     ];
     const fetchMock = installFetch({
@@ -1728,6 +1801,7 @@ describe("App", () => {
             additions: 0,
             deletions: 0,
             binary: true,
+            tooLarge: false,
           },
         ],
         truncated: false,

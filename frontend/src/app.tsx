@@ -6,7 +6,7 @@ import ChangeTree, {
   changeKey,
   type ChangeEntry,
 } from "./changeTree";
-import CodeViewer from "./codeViewer";
+import CodeViewer, { MAX_HIGHLIGHT_BYTES } from "./codeViewer";
 import { lineChanges, type LineChange } from "./diffLines";
 import DiffViewer, { type DiffFile, type DiffView } from "./diffViewer";
 import EntryIcon from "./entryIcon";
@@ -139,7 +139,7 @@ async function loadFile(
         signal,
       );
       data.changes = lineChanges(diff.patch, count);
-      data.changesTruncated = diff.truncated;
+      data.changesTruncated = diff.truncated || diff.files.some((file) => file.tooLarge);
     }
   }
   return data;
@@ -878,7 +878,7 @@ function FileViewer({ file }: { file: FileView }) {
     return (
       <EmptyState
         title="File is too large"
-        detail={`The file (${formatBytes(file.size)}) exceeds the preview limit.`}
+        detail={`The file (${formatBytes(file.size)}) exceeds the 2 MiB preview limit.`}
       />
     );
   if (file.kind === "submodule")
@@ -888,12 +888,13 @@ function FileViewer({ file }: { file: FileView }) {
   if (file.content === null) throw new Error("Text content is missing.");
   return (
     <>
-      {(file.removed || file.changesTruncated) && (
+      {(file.removed || file.changesTruncated || file.size > MAX_HIGHLIGHT_BYTES) && (
         <div className="diff-summary">
           {file.removed && <span>Removed from working tree</span>}
           {file.changesTruncated && (
             <span className="diff-truncated">Change markers truncated</span>
           )}
+          {file.size > MAX_HIGHLIGHT_BYTES && <span>Syntax highlighting disabled</span>}
         </div>
       )}
       <CodeViewer content={file.content} path={file.path} changes={file.changes} />
