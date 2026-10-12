@@ -596,7 +596,10 @@ pub fn diff(repo: &Repository, query: DiffQuery) -> Result<DiffResult, Error> {
     if let Some(path) = &query.path {
         validate_path(path, false)?;
     }
-    let mut index = if query.source != DiffSource::Commit && !repo.is_bare() {
+    let mut index = if query.source != DiffSource::Commit {
+        if repo.is_bare() {
+            return Err(Error::NoWorktree);
+        }
         Some(repo.index()?)
     } else {
         None
@@ -611,39 +614,29 @@ pub fn diff(repo: &Repository, query: DiffQuery) -> Result<DiffResult, Error> {
             }
         }
     }
+    if matches!(
+        query.source,
+        DiffSource::Unstaged | DiffSource::Untracked | DiffSource::Worktree
+    ) {
+        options
+            .include_untracked(true)
+            .recurse_untracked_dirs(true)
+            .show_untracked_content(true);
+    }
     let mut diff = match query.source {
         DiffSource::Staged => {
-            if repo.is_bare() {
-                return Err(Error::NoWorktree);
-            }
             let head = commit_at(repo, "HEAD")?
                 .map(|commit| commit.tree())
                 .transpose()?;
             repo.diff_tree_to_index(head.as_ref(), None, Some(&mut options))?
         }
         DiffSource::Worktree => {
-            if repo.is_bare() {
-                return Err(Error::NoWorktree);
-            }
             let head = commit_at(repo, "HEAD")?
                 .map(|commit| commit.tree())
                 .transpose()?;
-            options
-                .include_untracked(true)
-                .recurse_untracked_dirs(true)
-                .show_untracked_content(true);
             repo.diff_tree_to_workdir_with_index(head.as_ref(), Some(&mut options))?
         }
         DiffSource::Unstaged | DiffSource::Untracked => {
-            if repo.is_bare() {
-                return Err(Error::NoWorktree);
-            }
-            if query.source == DiffSource::Untracked {
-                options
-                    .include_untracked(true)
-                    .recurse_untracked_dirs(true)
-                    .show_untracked_content(true);
-            }
             if query.source == DiffSource::Unstaged
                 && let Some(index) = &mut index
             {
@@ -651,10 +644,6 @@ pub fn diff(repo: &Repository, query: DiffQuery) -> Result<DiffResult, Error> {
                 for path in &intent_paths {
                     index.remove_path(Path::new(path))?;
                 }
-                options
-                    .include_untracked(true)
-                    .recurse_untracked_dirs(true)
-                    .show_untracked_content(true);
             }
             repo.diff_index_to_workdir(index.as_ref(), Some(&mut options))?
         }
