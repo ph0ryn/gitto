@@ -27,6 +27,24 @@ gitto --help
 
 ## Installation
 
+### Prebuilt binary
+
+Nixなしで利用する場合は、[GitHub Releases](https://github.com/ph0ryn/gitto/releases)から環境に合う`gitto-<version>-<target>.tar.gz`をダウンロードします。
+
+| OS / CPU | target |
+| --- | --- |
+| macOS / Apple Silicon | `aarch64-apple-darwin` |
+| Linux / x86_64 | `x86_64-unknown-linux-musl` |
+| Linux / ARM64 | `aarch64-unknown-linux-musl` |
+
+ダウンロードしたファイルを展開し、`gitto`を任意の場所に配置します。
+
+```sh
+tar -xzf 'gitto-<version>-<target>.tar.gz'
+```
+
+### Nix
+
 利用する`flake.nix`にgittoのinputを追加します。
 
 ```nix
