@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vp dev --host 127.0.0.1 --port 5173 --strictPort",
+    "dev:demo": "vp dev --mode demo --host 127.0.0.1 --port 5173 --strictPort",
     "build": "vp build",
+    "build:demo": "vp build --mode demo --base ./ --outDir dist-demo",
     "test": "vp test",
     "lint": "vp lint",
     "format:check": "vp fmt --check",

@@ -4,6 +4,11 @@ import { createRoot } from "react-dom/client";
 import App from "./app";
 import "./styles.css";
 
+if (import.meta.env.MODE === "demo") {
+  const { demoFetch } = await import("./demo");
+  globalThis.fetch = demoFetch;
+}
+
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <App />
