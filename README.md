@@ -7,6 +7,11 @@
 ローカルのGitリポジトリをブラウザーで閲覧する、読み取り専用のCLIです。  
 コミット履歴、ブランチ・タグ、ファイル、staged／unstaged／untrackedの差分を表示します。
 
+## Demo
+
+[Interactive preview](https://ph0ryn.github.io/gitto/)で、インストールせずにgittoのUIを試せます。
+架空のリポジトリを使い、ファイル閲覧・差分・コミット履歴・ブランチ切り替え・全文検索を操作できます。
+
 ## Usage
 
 ```sh
