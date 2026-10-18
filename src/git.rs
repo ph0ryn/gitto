@@ -64,6 +64,7 @@ pub struct CommitInfo {
 pub struct History {
     commits: Vec<CommitInfo>,
     has_more: bool,
+    total: usize,
 }
 
 #[derive(Serialize)]
@@ -240,14 +241,21 @@ pub fn commits(repo: &Repository, query: CommitsQuery) -> Result<History, Error>
         return Ok(History {
             commits,
             has_more: false,
+            total: 0,
         });
     };
     let mut walk = repo.revwalk()?;
     walk.set_sorting(git2::Sort::TOPOLOGICAL | git2::Sort::TIME)?;
     walk.push(commit.id())?;
-    let mut page = walk.skip(query.offset);
-    for oid in page.by_ref().take(query.limit) {
-        let commit = repo.find_commit(oid?)?;
+    let mut total = 0;
+    for oid in walk {
+        let oid = oid?;
+        let index = total;
+        total += 1;
+        if index < query.offset || commits.len() >= query.limit {
+            continue;
+        }
+        let commit = repo.find_commit(oid)?;
         let id = commit.id().to_string();
         let message = utf8(commit.message_bytes())?.to_owned();
         commits.push(CommitInfo {
@@ -260,14 +268,12 @@ pub fn commits(repo: &Repository, query: CommitsQuery) -> Result<History, Error>
             parents: commit.parent_ids().map(|id| id.to_string()).collect(),
         });
     }
-    let has_more = match page.next() {
-        Some(oid) => {
-            oid?;
-            true
-        }
-        None => false,
-    };
-    Ok(History { commits, has_more })
+    let has_more = total.saturating_sub(query.offset) > commits.len();
+    Ok(History {
+        commits,
+        has_more,
+        total,
+    })
 }
 
 pub fn tree(repo: &Repository, query: RevisionQuery) -> Result<TreeListing, Error> {

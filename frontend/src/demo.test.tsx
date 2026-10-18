@@ -164,11 +164,12 @@ describe("Demo API consistency", () => {
         hasMore: boolean;
       }>(`/api/commits?revision=${revision}`);
       expect(history.hasMore).toBe(false);
-      const page = await read<{ commits: typeof history.commits; hasMore: boolean }>(
+      const page = await read<{ commits: typeof history.commits; hasMore: boolean; total: number }>(
         `/api/commits?revision=${revision}&offset=1&limit=1`,
       );
       expect(page.commits).toEqual(history.commits.slice(1, 2));
       expect(page.hasMore).toBe(history.commits.length > 2);
+      expect(page.total).toBe(history.commits.length);
       for (const commit of history.commits) {
         expect(commit.id).toMatch(/^[0-9a-f]{40}$/);
         expect(commit.shortId).toBe(commit.id.slice(0, 7));

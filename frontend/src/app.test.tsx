@@ -27,6 +27,7 @@ const tree: { revision: string; entries: TreeEntry[] } = {
   entries: [{ name: "README.md", path: "README.md", kind: "blob", size: 24 }],
 };
 const commits = {
+  total: 1,
   hasMore: false,
   commits: [
     {
@@ -891,15 +892,22 @@ describe("App", () => {
       const offset = Number(query.get("offset"));
       return response({
         commits: history.slice(offset, offset + 50),
+        total: history.length,
         hasMore: offset + 50 < history.length,
       });
     });
     await act(async () => {
       render(<App />);
     });
+    const heading = within(screen.getByRole("complementary", { name: "Commit history" })).getByRole(
+      "heading",
+      { name: "Commits" },
+    ).parentElement!;
+    expect(within(heading).getByText("75")).toBeInTheDocument();
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: "Load more" }));
     });
+    expect(within(heading).getByText("75")).toBeInTheDocument();
     const pane = screen.getByRole("complementary", { name: "Commit history" });
     expect(within(pane).getAllByRole("button")).toHaveLength(75);
     history.unshift({ ...commits.commits[0], id: "new-commit", summary: "New commit" });
@@ -908,6 +916,7 @@ describe("App", () => {
       await vi.advanceTimersByTimeAsync(2000);
     });
     expect(within(pane).getAllByRole("button")).toHaveLength(76);
+    expect(within(heading).getByText("76")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /New commit/ })).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/commits?revision=HEAD&offset=50&limit=50",

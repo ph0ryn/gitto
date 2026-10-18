@@ -245,6 +245,7 @@ export const demoFetch: typeof fetch = async (input, init) => {
     return Response.json({
       commits: history.slice(offset, offset + limit),
       hasMore: offset + limit < history.length,
+      total: history.length,
     });
   }
   if (url.pathname === "/api/tree") {

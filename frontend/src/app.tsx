@@ -176,6 +176,7 @@ export default function App() {
   const [repo, setRepo] = useState<Repo | null>(null);
   const [commits, setCommits] = useState<Commit[]>([]);
   const [hasMore, setHasMore] = useState(false);
+  const [commitTotal, setCommitTotal] = useState(0);
   const [tree, setTree] = useState<TreeEntry[]>([]);
   const [status, setStatus] = useState<Status>(EMPTY_STATUS);
   const [revision, setRevision] = useState("HEAD");
@@ -240,7 +241,7 @@ export default function App() {
       const repoData = await api<Repo>("/api/repo");
       const requestRevision = "HEAD";
       const [commitData, treeData, statusData] = await Promise.all([
-        api<{ commits: Commit[]; hasMore: boolean }>(
+        api<{ commits: Commit[]; hasMore: boolean; total: number }>(
           `/api/commits?revision=${requestRevision}&offset=0&limit=50`,
         ),
         api<{ entries: TreeEntry[]; revision: string }>(
@@ -250,6 +251,7 @@ export default function App() {
       ]);
       setRepo(repoData);
       setCommits(commitData.commits);
+      setCommitTotal(commitData.total);
       setHasMore(commitData.hasMore);
       setTree(treeData.entries);
       setSearchQuery(null);
@@ -341,7 +343,7 @@ export default function App() {
         const [pages, treeData, statusData] = await Promise.all([
           Promise.all(
             Array.from({ length: historyPages }, (_, page) =>
-              api<{ commits: Commit[]; hasMore: boolean }>(
+              api<{ commits: Commit[]; hasMore: boolean; total: number }>(
                 `/api/commits?revision=${encodeURIComponent(historyRevision)}&offset=${page * 50}&limit=50`,
                 signal,
               ),
@@ -355,6 +357,7 @@ export default function App() {
         ]);
         if (signal.aborted) return;
         setCommits(pages.flatMap((page) => page.commits));
+        setCommitTotal(pages[0].total);
         setHasMore(pages[pages.length - 1].hasMore);
         setTree(treeData.entries);
         setStatus(statusData);
@@ -473,7 +476,7 @@ export default function App() {
     setError(null);
     try {
       const [commitData, treeData] = await Promise.all([
-        api<{ commits: Commit[]; hasMore: boolean }>(
+        api<{ commits: Commit[]; hasMore: boolean; total: number }>(
           `/api/commits?revision=${encodeURIComponent(nextRevision)}&offset=0&limit=50`,
         ),
         api<{ entries: TreeEntry[] }>(
@@ -481,6 +484,7 @@ export default function App() {
         ),
       ]);
       setCommits(commitData.commits);
+      setCommitTotal(commitData.total);
       setHasMore(commitData.hasMore);
       setTree(treeData.entries);
       setRevision(nextRevision);
@@ -563,10 +567,11 @@ export default function App() {
   async function loadMore() {
     setBusy(true);
     try {
-      const data = await api<{ commits: Commit[]; hasMore: boolean }>(
+      const data = await api<{ commits: Commit[]; hasMore: boolean; total: number }>(
         `/api/commits?revision=${encodeURIComponent(historyRevision)}&offset=${commits.length}&limit=50`,
       );
       setCommits((current) => [...current, ...data.commits]);
+      setCommitTotal(data.total);
       setHistoryPages(Math.ceil((commits.length + data.commits.length) / 50));
       setHasMore(data.hasMore);
     } catch (reason) {
@@ -904,7 +909,7 @@ export default function App() {
                 Back to HEAD
               </button>
             )}
-            <span>{commits.length}</span>
+            <span>{commitTotal}</span>
           </div>
           <div className="pane-scroll history-content">
             {commits.length === 0 ? (
