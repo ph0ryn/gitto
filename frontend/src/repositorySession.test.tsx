@@ -90,6 +90,31 @@ describe("Repository session", () => {
     expect(close.querySelector("svg")).toHaveAttribute("aria-hidden", "true");
   });
 
+  it.each(["repo", "tree"])("can close after /api/%s fails to load", async (endpoint) => {
+    vi.useFakeTimers();
+    const fetchMock = installFetch();
+    const originalFetch = fetchMock.getMockImplementation()!;
+    fetchMock.mockImplementation((input, init) =>
+      typeof input === "string" && input.split("?")[0] === `${base}/api/${endpoint}`
+        ? Promise.resolve(Response.json({ error: "Repository unavailable" }, { status: 500 }))
+        : originalFetch(input, init),
+    );
+    await mount();
+    expect(screen.getByText("Could not load repository")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Retry" })).toBeEnabled();
+    await click("Close repository");
+    expect(fetchMock).toHaveBeenCalledWith(`${base}/api/close`, {
+      method: "POST",
+      headers: { "X-Gitto-Request": "1" },
+      signal: expect.any(AbortSignal),
+    });
+    expect(screen.getByRole("heading", { name: "Repository closed" })).toBeVisible();
+    expect(localStorage.getItem(closeKey)).toBe("1");
+    const count = fetchMock.mock.calls.length;
+    await advance(10000);
+    expect(fetchMock).toHaveBeenCalledTimes(count);
+  });
+
   it("never closes on pagehide, beforeunload, unload, or component unmount", async () => {
     vi.useFakeTimers();
     const fetchMock = installFetch();

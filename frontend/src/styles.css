@@ -976,7 +976,7 @@ summary.tree-row::-webkit-details-marker {
 .app-state p {
   font-size: 13px;
 }
-.app-state button {
+.app-state button:not(.icon-button) {
   padding: 8px 14px;
   border: 1px solid var(--line);
   border-radius: 5px;

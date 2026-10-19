@@ -765,6 +765,7 @@ export default function App() {
         <strong>Could not load repository</strong>
         <p>{error}</p>
         <button onClick={() => void loadWorkspace()}>Retry</button>
+        <RepositoryCloseButton />
       </div>
     );
   }
