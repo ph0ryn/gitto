@@ -520,6 +520,35 @@ async fn register(files: &ServerFiles, port: u16, path: PathBuf) -> Result<Regis
     unreachable!("the final registration attempt always returns")
 }
 
+fn registration_url(port: u16, id: &str) -> String {
+    format!("http://127.0.0.1:{port}/r/{id}/")
+}
+
+fn write_registrations(
+    output: &mut impl Write,
+    registrations: &[Registration],
+    port: u16,
+) -> io::Result<()> {
+    if registrations.is_empty() {
+        writeln!(output, "No registered repositories.")?;
+    } else {
+        writeln!(output, "URL\tSTATUS\tPATH")?;
+        for registration in registrations {
+            let status = match registration.status {
+                RegistrationStatus::Active => "active",
+                RegistrationStatus::Inactive => "inactive",
+            };
+            writeln!(
+                output,
+                "{}\t{status}\t{}",
+                registration_url(port, &registration.id),
+                registration.path.display()
+            )?;
+        }
+    }
+    Ok(())
+}
+
 pub async fn run(cli: Cli) -> Result<()> {
     let files = server_files(cli.port)?;
     let startup = startup_lock(&files).await?;
@@ -527,30 +556,14 @@ pub async fn run(cli: Cli) -> Result<()> {
         let registrations = list_registrations(&files, cli.port).await?;
         drop(startup);
         let mut output = io::stdout().lock();
-        if registrations.is_empty() {
-            writeln!(output, "No registered repositories.")?;
-        } else {
-            writeln!(output, "ID\tSTATUS\tPATH")?;
-            for registration in registrations {
-                let status = match registration.status {
-                    RegistrationStatus::Active => "active",
-                    RegistrationStatus::Inactive => "inactive",
-                };
-                writeln!(
-                    output,
-                    "{}\t{status}\t{}",
-                    registration.id,
-                    registration.path.display()
-                )?;
-            }
-        }
+        write_registrations(&mut output, &registrations, cli.port)?;
         return Ok(());
     }
     // Reuse the backend's read-only identity logic and reject invalid paths before spawning.
     let path = crate::server::repository_path(&cli.path)?;
     let registration = register(&files, cli.port, path).await?;
     drop(startup);
-    let url = format!("http://127.0.0.1:{}/r/{}/", cli.port, registration.id);
+    let url = registration_url(cli.port, &registration.id);
     println!("gitto: {url}");
     if !cli.no_open
         && let Err(error) = webbrowser::open(&url)
@@ -583,6 +596,41 @@ mod tests {
         fn drop(&mut self) {
             fs::remove_dir_all(&self.0.directory).unwrap();
         }
+    }
+
+    #[test]
+    fn list_output_shows_repository_urls_with_the_selected_port() {
+        let registrations = [
+            Registration {
+                id: "0123456789abcdef0123456789abcdef".into(),
+                path: PathBuf::from("/repositories/active"),
+                status: RegistrationStatus::Active,
+            },
+            Registration {
+                id: "abcdef0123456789abcdef0123456789".into(),
+                path: PathBuf::from("/repositories/inactive with spaces"),
+                status: RegistrationStatus::Inactive,
+            },
+        ];
+        for port in [47319, 5000] {
+            let mut output = Vec::new();
+            write_registrations(&mut output, &registrations, port).unwrap();
+            assert_eq!(
+                String::from_utf8(output).unwrap(),
+                format!(
+                    "URL\tSTATUS\tPATH\n\
+                     http://127.0.0.1:{port}/r/0123456789abcdef0123456789abcdef/\tactive\t/repositories/active\n\
+                     http://127.0.0.1:{port}/r/abcdef0123456789abcdef0123456789/\tinactive\t/repositories/inactive with spaces\n"
+                )
+            );
+        }
+    }
+
+    #[test]
+    fn list_output_preserves_the_empty_registry_message() {
+        let mut output = Vec::new();
+        write_registrations(&mut output, &[], 47319).unwrap();
+        assert_eq!(output, b"No registered repositories.\n");
     }
 
     #[test]
