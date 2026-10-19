@@ -1,6 +1,5 @@
 use std::{
     error::Error,
-    ffi::OsString,
     fs::{self, File, OpenOptions, TryLockError},
     io::{self, Write},
     net::Ipv4Addr,
@@ -64,36 +63,24 @@ struct Health {
     version: String,
 }
 
-fn cache_directory(
-    port: u16,
-    xdg: Option<OsString>,
-    home: Option<OsString>,
-) -> io::Result<PathBuf> {
-    let root = match xdg.filter(|value| !value.is_empty()) {
-        Some(value) => PathBuf::from(value),
-        None => PathBuf::from(home.filter(|value| !value.is_empty()).ok_or_else(|| {
-            io::Error::new(
-                io::ErrorKind::NotFound,
-                "Neither XDG_CACHE_HOME nor HOME is set",
-            )
-        })?)
-        .join(".cache"),
-    };
-    if !root.is_absolute() {
+fn cache_directory(port: u16, temporary: PathBuf) -> io::Result<PathBuf> {
+    if !temporary.is_absolute() {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
-            "The gitto cache location must be an absolute path",
+            "The temporary directory must be an absolute path; set TMPDIR to an absolute path",
         ));
     }
-    Ok(root.join("gitto").join(port.to_string()))
+    // A shared temporary root such as /tmp needs a separate private namespace per user.
+    #[cfg(unix)]
+    // SAFETY: geteuid has no preconditions or memory effects.
+    let namespace = format!("gitto-{}", unsafe { libc::geteuid() });
+    #[cfg(not(unix))]
+    let namespace = "gitto";
+    Ok(temporary.join(namespace).join(port.to_string()))
 }
 
 pub fn server_files(port: u16) -> io::Result<ServerFiles> {
-    let directory = cache_directory(
-        port,
-        std::env::var_os("XDG_CACHE_HOME"),
-        std::env::var_os("HOME"),
-    )?;
+    let directory = cache_directory(port, std::env::temp_dir())?;
     let namespace = directory.parent().expect("cache includes a port directory");
     fs::create_dir_all(namespace)?;
     private_directory(namespace)?;
@@ -818,25 +805,32 @@ mod tests {
     }
 
     #[test]
-    fn cache_is_namespaced_by_port_and_prefers_xdg() {
-        assert_eq!(
-            cache_directory(47319, Some("/cache".into()), Some("/home/me".into())).unwrap(),
-            PathBuf::from("/cache/gitto/47319")
-        );
-        assert_eq!(
-            cache_directory(5000, None, Some("/home/me".into())).unwrap(),
-            PathBuf::from("/home/me/.cache/gitto/5000")
-        );
+    fn server_files_use_os_temporary_storage() {
+        let files = server_files(0).unwrap();
+        let temporary = std::env::temp_dir();
+        #[cfg(unix)]
+        // SAFETY: geteuid has no preconditions or memory effects.
+        let namespace = format!("gitto-{}", unsafe { libc::geteuid() });
+        #[cfg(not(unix))]
+        let namespace = "gitto";
+        assert_eq!(files.directory, temporary.join(namespace).join("0"));
+        assert_eq!(server_files(0).unwrap().directory, files.directory);
+        assert_ne!(server_files(1).unwrap().directory, files.directory);
+        for path in [&files.registry, &files.metadata, &files.log] {
+            assert_eq!(path.parent(), Some(files.directory.as_path()));
+        }
     }
 
     #[test]
-    fn empty_xdg_uses_home_and_missing_home_is_an_error() {
-        assert_eq!(
-            cache_directory(47319, Some("".into()), Some("/home/me".into())).unwrap(),
-            PathBuf::from("/home/me/.cache/gitto/47319")
-        );
-        assert!(cache_directory(47319, None, None).is_err());
-        assert!(cache_directory(47319, Some("relative".into()), None).is_err());
+    fn temporary_cache_rejects_relative_or_empty_roots() {
+        for root in ["relative", ""] {
+            assert_eq!(
+                cache_directory(47319, PathBuf::from(root))
+                    .unwrap_err()
+                    .kind(),
+                io::ErrorKind::InvalidInput
+            );
+        }
     }
 
     #[test]
