@@ -24,7 +24,7 @@ let
 
   rustClippy = pkgs.rustPlatform.buildRustPackage {
     pname = "gitto-backend-clippy";
-    version = "0.2.0";
+    version = "0.2.1";
     src = source;
     cargoLock.lockFile = ../Cargo.lock;
 
@@ -71,7 +71,7 @@ let
     name: script:
     pkgs.stdenvNoCC.mkDerivation {
       pname = "gitto-frontend-${name}";
-      version = "0.2.0";
+      version = "0.2.1";
       src = frontendSource;
       pnpmDeps = frontendDeps;
       nativeBuildInputs = [
