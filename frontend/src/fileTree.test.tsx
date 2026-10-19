@@ -5,6 +5,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 import FileTree, { type TreeEntry } from "./fileTree";
+import "./styles.css";
 
 const folder: TreeEntry = { name: "src", path: "src", kind: "tree", size: null };
 
@@ -43,6 +44,38 @@ function renderTree(
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+});
+
+describe("FileTree file names", () => {
+  it.each([false, true])(
+    "uses a double strikethrough only for deleted file names (selected: %s)",
+    async (selected) => {
+      render(
+        <FileTree
+          entries={[folder]}
+          decorations={
+            new Map([
+              ["src", "deleted"],
+              ["src/deleted.ts", "deleted"],
+              ["src/modified.ts", "modified"],
+            ])
+          }
+          selectedPath={selected ? "src/deleted.ts" : undefined}
+          disabled={false}
+          loadChildren={vi.fn().mockResolvedValue([file("deleted.ts"), file("modified.ts")])}
+          onSelect={vi.fn()}
+          onError={vi.fn()}
+        />,
+      );
+      if (!selected) await userEvent.setup().click(screen.getByRole("button", { name: "src" }));
+
+      expect(await screen.findByText("deleted.ts")).toHaveStyle(
+        "text-decoration-line: line-through; text-decoration-style: double",
+      );
+      expect(screen.getByText("modified.ts")).not.toHaveStyle("text-decoration-line: line-through");
+      expect(screen.getByText("src")).not.toHaveStyle("text-decoration-line: line-through");
+    },
+  );
 });
 
 describe("FileTree refresh", () => {

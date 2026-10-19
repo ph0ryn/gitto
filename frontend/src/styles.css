@@ -419,6 +419,10 @@ summary.tree-row::-webkit-details-marker {
 .tree-row[data-change="conflicted"] {
   color: var(--deleted);
 }
+.tree-row[data-change="deleted"] > .tree-name {
+  text-decoration-line: line-through;
+  text-decoration-style: double;
+}
 .tree-row.is-selected,
 .change-item:has(> .is-selected),
 .commit-row.is-selected {

@@ -189,7 +189,7 @@ function FileTreeItem({
       >
         <TreeChevron expanded={folder ? expanded : undefined} />
         <EntryIcon name={entry.name} kind={entry.kind} expanded={expanded} />
-        <span>{entry.name}</span>
+        <span className={folder ? undefined : "tree-name"}>{entry.name}</span>
       </button>
       <div
         className="tree-children"

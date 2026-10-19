@@ -20,6 +20,7 @@ export default defineConfig({
   },
   test: {
     environment: "jsdom",
+    css: true,
   },
   fmt: {
     arrowParens: "always",
