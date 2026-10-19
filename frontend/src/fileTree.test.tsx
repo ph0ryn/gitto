@@ -74,7 +74,7 @@ describe("FileTree refresh", () => {
     const props = {
       entries,
       disabled: false,
-      loadChildren: vi.fn(),
+      loadChildren: vi.fn().mockResolvedValue([]),
       onSelect: vi.fn(),
       onError: vi.fn(),
     };
@@ -93,6 +93,41 @@ describe("FileTree refresh", () => {
       "aria-current",
       "true",
     );
+  });
+
+  it("reveals the selected file's ancestors without opening sibling folders or preventing collapse", async () => {
+    const loadChildren = vi.fn(async (entry: TreeEntry): Promise<TreeEntry[]> =>
+      entry.path === "src"
+        ? [
+            { name: "deep", path: "src/deep", kind: "tree", size: null },
+            { name: "other", path: "src/other", kind: "tree", size: null },
+          ]
+        : [{ name: "main.ts", path: "src/deep/main.ts", kind: "blob", size: 1 }],
+    );
+    const props = {
+      entries: [folder, { ...folder, name: "src-extra", path: "src-extra" }],
+      selectedPath: "src/deep/main.ts",
+      disabled: false,
+      loadChildren,
+      onSelect: vi.fn(),
+      onError: vi.fn(),
+    };
+    const view = render(<FileTree {...props} />);
+    expect(await screen.findByRole("button", { name: "main.ts" })).toHaveAttribute(
+      "aria-current",
+      "true",
+    );
+    expect(screen.getByRole("button", { name: "deep" })).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByRole("button", { name: "other" })).toHaveAttribute("aria-expanded", "false");
+    expect(screen.getByRole("button", { name: "src-extra" })).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
+
+    await userEvent.setup().click(screen.getByRole("button", { name: "src" }));
+    view.rerender(<FileTree {...props} refreshVersion={1} />);
+    expect(screen.getByRole("button", { name: "src" })).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("button", { name: "main.ts" })).not.toBeInTheDocument();
   });
 
   it("reloads expanded folders while keeping the old children until the update completes", async () => {

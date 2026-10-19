@@ -2,6 +2,7 @@ import "@testing-library/jest-dom/vitest";
 import { icons } from "@iconify-json/catppuccin";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { StrictMode } from "react";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 import App from "./app";
@@ -147,6 +148,310 @@ afterEach(() => {
   vi.restoreAllMocks();
   vi.useRealTimers();
   document.title = "gitto";
+  window.history.replaceState(null, "", "/");
+});
+
+describe("URL view state", () => {
+  it("restores the open file and reveals only its ancestor folders after remount", async () => {
+    const path = "src/deep/空 白 &?#%.ts";
+    installFetch({
+      trees: {
+        "": [
+          { name: "src", path: "src", kind: "tree", size: null },
+          { name: "docs", path: "docs", kind: "tree", size: null },
+        ],
+        src: [{ name: "deep", path: "src/deep", kind: "tree", size: null }],
+        "src/deep": [{ name: "空 白 &?#%.ts", path, kind: "blob", size: 10 }],
+        docs: [],
+      },
+    });
+    const user = userEvent.setup();
+    const initial = render(<App />);
+    await user.click(await screen.findByRole("button", { name: "docs" }));
+    await user.click(screen.getByRole("button", { name: "src" }));
+    await user.click(await screen.findByRole("button", { name: "deep" }));
+    await user.click(await screen.findByRole("button", { name: "空 白 &?#%.ts" }));
+    await screen.findByRole("heading", { name: path });
+    const query = new URLSearchParams(window.location.search);
+    expect(query.get("view")).toBe("file");
+    expect(query.get("path")).toBe(path);
+
+    initial.unmount();
+    render(
+      <StrictMode>
+        <App />
+      </StrictMode>,
+    );
+    expect(await screen.findByRole("heading", { name: path })).toBeVisible();
+    expect(await screen.findByRole("button", { name: "空 白 &?#%.ts" })).toHaveAttribute(
+      "aria-current",
+      "true",
+    );
+    expect(screen.getByRole("button", { name: "src" })).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByRole("button", { name: "deep" })).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByRole("button", { name: "docs" })).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it.each(["staged", "unstaged", "untracked"] as const)(
+    "restores the selected $0 diff without confusing identical paths",
+    async (source) => {
+      installFetch({
+        statusData: {
+          staged: [{ path: "src/main.ts", oldPath: null, status: "modified" }],
+          unstaged: [{ path: "src/main.ts", oldPath: null, status: "modified" }],
+          untracked: [{ path: "src/main.ts", oldPath: null, status: "untracked" }],
+          conflicts: [],
+        },
+      });
+      const label = source[0].toUpperCase() + source.slice(1);
+      const name = `src/main.ts diff (${label} · ${source === "untracked" ? "untracked" : "modified"})`;
+      const initial = render(<App />);
+      await userEvent.setup().click(await screen.findByRole("button", { name }));
+      await screen.findByRole("heading", { name: "src/main.ts" });
+      const query = new URLSearchParams(window.location.search);
+      expect(query.get("view")).toBe("diff");
+      expect(query.get("source")).toBe(source);
+      expect(query.get("path")).toBe("src/main.ts");
+
+      initial.unmount();
+      render(<App />);
+      expect(await screen.findByRole("heading", { name: "src/main.ts" })).toBeVisible();
+      expect(screen.getByRole("button", { name })).toHaveAttribute("aria-pressed", "true");
+    },
+  );
+
+  it("restores a historical commit with its branch history and keeps a closed diff closed", async () => {
+    const fetchMock = installFetch({
+      repoData: {
+        ...repo,
+        branches: [...repo.branches, { name: "other", revision: "refs/heads/other" }],
+      },
+    });
+    const user = userEvent.setup();
+    const initial = render(<App />);
+    await user.selectOptions(
+      await screen.findByRole("combobox", { name: "Branch" }),
+      "refs/heads/other",
+    );
+    await user.click(screen.getByRole("button", { name: /最初のコミット/ }));
+    await screen.findByRole("heading", { name: "abc1234 changes" });
+    expect(new URLSearchParams(window.location.search).get("rev")).toBe("refs/heads/other");
+    expect(new URLSearchParams(window.location.search).get("commit")).toBe("abc123456789");
+
+    initial.unmount();
+    fetchMock.mockClear();
+    const restored = render(<App />);
+    expect(await screen.findByRole("heading", { name: "abc1234 changes" })).toBeVisible();
+    expect(screen.getByRole("combobox", { name: "Branch" })).toHaveValue("abc123456789");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/commits?revision=refs%2Fheads%2Fother&offset=0&limit=50",
+    );
+    expect(fetchMock).toHaveBeenCalledWith("/api/tree?revision=abc123456789&path=");
+
+    await user.click(screen.getByRole("button", { name: "Close view" }));
+    expect(new URLSearchParams(window.location.search).has("view")).toBe(false);
+    restored.unmount();
+    render(<App />);
+    expect(await screen.findByText("Open a file")).toBeVisible();
+    expect(screen.getByRole("combobox", { name: "Branch" })).toHaveValue("abc123456789");
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+  });
+
+  it("restores local added-then-deleted content from the index without fetching local folders", async () => {
+    window.history.replaceState(null, "", "?view=file&path=notes%2Fdeep%2Fnew.md");
+    const fetchMock = installFetch({
+      trees: { "": [] },
+      statusData: {
+        staged: [{ path: "notes/deep/new.md", oldPath: null, status: "added" }],
+        unstaged: [{ path: "notes/deep/new.md", oldPath: null, status: "deleted" }],
+        untracked: [],
+        conflicts: [],
+      },
+    });
+    render(<App />);
+    expect(await screen.findByRole("heading", { name: "notes/deep/new.md" })).toBeVisible();
+    expect(await screen.findByRole("button", { name: "new.md" })).toHaveAttribute(
+      "aria-current",
+      "true",
+    );
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/file?source=index&revision=HEAD&path=notes%2Fdeep%2Fnew.md",
+      expect.anything(),
+    );
+    expect(
+      fetchMock.mock.calls.filter(
+        ([url]) => typeof url === "string" && url.startsWith("/api/tree"),
+      ),
+    ).toHaveLength(1);
+  });
+
+  it("restores a commit file even when the commit is outside the loaded history page", async () => {
+    window.history.replaceState(null, "", "?commit=older1234567&view=file&path=README.md");
+    const fetchMock = installFetch();
+    render(<App />);
+    expect(await screen.findByRole("heading", { name: "README.md" })).toBeVisible();
+    expect(screen.getByRole("combobox", { name: "Branch" })).toHaveValue("older1234567");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/file?source=commit&revision=older1234567&path=README.md",
+      expect.anything(),
+    );
+  });
+
+  it("handles back and forward navigation without losing the base path or unrelated URL data", async () => {
+    window.history.replaceState(null, "", "/gitto/?theme=light#viewer");
+    installFetch();
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(await screen.findByRole("button", { name: "README.md" }));
+    await screen.findByRole("heading", { name: "README.md" });
+    expect(window.location.pathname).toBe("/gitto/");
+    expect(new URLSearchParams(window.location.search).get("theme")).toBe("light");
+    expect(window.location.hash).toBe("#viewer");
+    await user.click(screen.getByRole("button", { name: "Close view" }));
+    expect(new URLSearchParams(window.location.search).has("path")).toBe(false);
+    await act(async () => window.history.back());
+    expect(await screen.findByRole("heading", { name: "README.md" })).toBeVisible();
+    await act(async () => window.history.forward());
+    expect(await screen.findByText("Open a file")).toBeVisible();
+  });
+
+  it("restores a deleted commit diff without requiring a tree entry and loads all change statistics", async () => {
+    window.history.replaceState(
+      null,
+      "",
+      "?commit=abc123456789&view=diff&source=commit&path=gone.ts",
+    );
+    const deleted = {
+      path: "gone.ts",
+      oldPath: null,
+      status: "deleted",
+      additions: 0,
+      deletions: 1,
+      binary: false,
+      tooLarge: false,
+    };
+    const other = { ...deleted, path: "other.ts", status: "modified", additions: 1 };
+    const fetchMock = installFetch({
+      diffData: { files: [deleted], patch: "@@ -1 +0,0 @@\n-removed", truncated: true },
+      commitStats: { files: [deleted, other], patch: "", truncated: false },
+    });
+    render(<App />);
+    expect(await screen.findByRole("heading", { name: "gone.ts" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "gone.ts diff (Commit · deleted)" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(screen.getByRole("button", { name: "other.ts diff (Commit · modified)" })).toBeVisible();
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/diff?source=commit&revision=abc123456789&statsOnly=true",
+      expect.anything(),
+    );
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it.each([
+    "view=unknown",
+    "view=file",
+    "view=diff&source=other&path=a",
+    "view=diff&source=commit",
+    "rev=",
+    "commit=",
+  ])("reports an invalid URL (%s) without falling back to HEAD", async (query) => {
+    window.history.replaceState(null, "", `?${query}`);
+    const fetchMock = installFetch();
+    render(<App />);
+    expect(await screen.findByText(/Invalid view URL/)).toBeVisible();
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(window.location.search).toBe(`?${query}`);
+  });
+
+  it.each(["commit", "branch"])(
+    "ignores an obsolete %s navigation after browser history changes",
+    async (destination) => {
+      installFetch({
+        repoData: {
+          ...repo,
+          branches: [...repo.branches, { name: "other", revision: "refs/heads/other" }],
+        },
+      });
+      const user = userEvent.setup();
+      render(<App />);
+      await screen.findByRole("button", { name: /最初のコミット/ });
+      let resolveTree!: (value: Response) => void;
+      const pending = new Promise<Response>((resolve) => {
+        resolveTree = resolve;
+      });
+      const fetchMock = vi.spyOn(globalThis, "fetch");
+      const installedFetch = fetchMock.getMockImplementation()!;
+      let holdTree = true;
+      fetchMock.mockImplementation((input, init) => {
+        if (holdTree && typeof input === "string" && input.startsWith("/api/tree")) return pending;
+        return installedFetch(input, init);
+      });
+      if (destination === "commit") {
+        await user.click(screen.getByRole("button", { name: /最初のコミット/ }));
+      } else {
+        await user.selectOptions(
+          screen.getByRole("combobox", { name: "Branch" }),
+          "refs/heads/other",
+        );
+      }
+      holdTree = false;
+      window.history.replaceState(null, "", "?view=file&path=README.md");
+      fireEvent(window, new PopStateEvent("popstate"));
+      expect(await screen.findByRole("heading", { name: "README.md" })).toBeVisible();
+      await act(async () => resolveTree(await response(tree)));
+      expect(screen.getByRole("heading", { name: "README.md" })).toBeVisible();
+      expect(screen.getByRole("combobox", { name: "Branch" })).toHaveValue("refs/heads/main");
+      expect(new URLSearchParams(window.location.search).get("path")).toBe("README.md");
+      expect(new URLSearchParams(window.location.search).get("commit")).toBeNull();
+    },
+  );
+
+  it.each([
+    { query: "view=file&path=missing.ts", message: "File not found: missing.ts" },
+    { query: "rev=refs%2Fheads%2Fmissing", message: "Branch not found" },
+  ])(
+    "keeps a failed history restoration visible instead of showing the previous file ($query)",
+    async ({ query, message }) => {
+      const fetchMock = installFetch();
+      const installedFetch = fetchMock.getMockImplementation()!;
+      fetchMock.mockImplementation((input, init) =>
+        typeof input === "string" &&
+        input.startsWith("/api/commits?revision=refs%2Fheads%2Fmissing")
+          ? response({ error: "Branch not found" }, 404)
+          : installedFetch(input, init),
+      );
+      const user = userEvent.setup();
+      render(<App />);
+      await user.click(await screen.findByRole("button", { name: "README.md" }));
+      await screen.findByRole("heading", { name: "README.md" });
+      vi.useFakeTimers();
+      await act(async () => {
+        window.history.replaceState(null, "", `?${query}`);
+        fireEvent(window, new PopStateEvent("popstate"));
+      });
+      expect(screen.getByText(message)).toBeVisible();
+      expect(screen.queryByRole("heading", { name: "README.md" })).not.toBeInTheDocument();
+      const callsAfterFailure = fetchMock.mock.calls.length;
+      await act(async () => vi.advanceTimersByTimeAsync(4000));
+      expect(screen.getByText(message)).toBeVisible();
+      expect(fetchMock).toHaveBeenCalledTimes(callsAfterFailure);
+      await act(async () => {
+        window.history.replaceState(null, "", "?view=file&path=README.md");
+        fireEvent(window, new PopStateEvent("popstate"));
+      });
+      expect(screen.getByRole("heading", { name: "README.md" })).toBeVisible();
+    },
+  );
+
+  it("shows a missing restored file as an error instead of silently discarding the URL", async () => {
+    window.history.replaceState(null, "", "?view=file&path=missing.ts");
+    installFetch();
+    render(<App />);
+    expect(await screen.findByText(/File not found: missing.ts/)).toBeVisible();
+    expect(new URLSearchParams(window.location.search).get("path")).toBe("missing.ts");
+  });
 });
 
 describe("App", () => {

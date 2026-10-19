@@ -48,6 +48,7 @@ export function TreeChevron({ expanded }: { expanded?: boolean }) {
 type FileTreeProps = {
   entries: TreeEntry[];
   selectedPath?: string;
+  revealPath?: string;
   decorations?: Map<string, string>;
   localPaths?: string[];
   disabled: boolean;
@@ -89,6 +90,11 @@ function FileTreeItem({
     local: boolean;
   } | null>(null);
   const pending = useRef<{ cancelled: boolean } | null>(null);
+  const revealPath = props.revealPath ?? props.selectedPath;
+
+  useEffect(() => {
+    if (folder && revealPath?.startsWith(`${entry.path}/`)) setExpanded(true);
+  }, [folder, entry.path, revealPath]);
 
   function cancelPending() {
     if (pending.current) pending.current.cancelled = true;

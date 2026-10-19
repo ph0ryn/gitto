@@ -12,6 +12,7 @@ import DiffViewer, { type DiffFile, type DiffView } from "./diffViewer";
 import EntryIcon from "./entryIcon";
 import FileTree, { mergeLocalEntries, type TreeEntry } from "./fileTree";
 import SearchResults, { type SearchResult } from "./searchResults";
+import { readViewLocation, writeViewLocation } from "./viewLocation";
 
 type Branch = { name: string; revision: string };
 type Repo = {
@@ -172,6 +173,61 @@ function EmptyState({ title, detail }: { title: string; detail: string }) {
   );
 }
 
+function isHeadRevision(revision: string, repo: Repo | null) {
+  return (
+    revision === "HEAD" ||
+    revision === repo?.branches.find((branch) => branch.name === repo.head)?.revision
+  );
+}
+
+function localFilePaths(status: Status) {
+  return [...status.untracked, ...status.staged, ...status.unstaged]
+    .filter((entry) => ["untracked", "added", "renamed", "copied"].includes(entry.status))
+    .map((entry) => entry.path);
+}
+
+async function findFileEntry(
+  path: string,
+  entries: TreeEntry[],
+  revision: string,
+  localPaths: string[],
+  signal: AbortSignal,
+): Promise<TreeEntry> {
+  const parts = path.split("/");
+  for (let index = 0; index < parts.length; index++) {
+    const parent = parts.slice(0, index).join("/");
+    const child = parts.slice(0, index + 1).join("/");
+    const entry = mergeLocalEntries(entries, localPaths, parent).find(
+      (item) => item.path === child,
+    );
+    if (!entry || (index === parts.length - 1 ? entry.kind === "tree" : entry.kind !== "tree")) {
+      throw new Error(`File not found: ${path}`);
+    }
+    if (index === parts.length - 1) return entry;
+    entries = entry.local
+      ? []
+      : (
+          await api<{ entries: TreeEntry[] }>(
+            `/api/tree?revision=${encodeURIComponent(revision)}&path=${encodeURIComponent(entry.path)}`,
+            signal,
+          )
+        ).entries;
+  }
+  throw new Error(`File not found: ${path}`);
+}
+
+async function loadCommitView(revision: string, signal?: AbortSignal) {
+  const query = `source=commit&revision=${encodeURIComponent(revision)}`;
+  const diff = await api<DiffView>(`/api/diff?${query}`, signal);
+  const stats = diff.truncated
+    ? await api<DiffView>(`/api/diff?${query}&statsOnly=true`, signal)
+    : diff;
+  return {
+    diff,
+    changes: stats.files.map((file): ChangeEntry => ({ ...file, source: "commit", stats: file })),
+  };
+}
+
 export default function App() {
   const [repo, setRepo] = useState<Repo | null>(null);
   const [commits, setCommits] = useState<Commit[]>([]);
@@ -195,6 +251,8 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [previewLoading, setPreviewLoading] = useState(false);
   const previewRequest = useRef<AbortController | null>(null);
+  const workspaceRequest = useRef<AbortController | null>(null);
+  const navigationVersion = useRef(0);
   const [error, setError] = useState<string | null>(null);
   const searchInput = useRef<HTMLInputElement>(null);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -203,9 +261,7 @@ export default function App() {
   const [searchError, setSearchError] = useState<string | null>(null);
   const [searchVersion, setSearchVersion] = useState(0);
   const [focusLine, setFocusLine] = useState<number | undefined>();
-  const viewingHead =
-    revision === "HEAD" ||
-    revision === repo?.branches.find((branch) => branch.name === repo.head)?.revision;
+  const viewingHead = isHeadRevision(revision, repo);
   const searchSource = viewingHead && !repo?.bare ? "worktree" : "commit";
 
   useEffect(() => {
@@ -234,21 +290,62 @@ export default function App() {
   }, [searchQuery, searchSource, revision, searchVersion]);
 
   const loadWorkspace = useCallback(async () => {
+    navigationVersion.current++;
+    workspaceRequest.current?.abort();
+    previewRequest.current?.abort();
+    previewRequest.current = null;
+    setPreviewLoading(false);
+    const controller = new AbortController();
+    workspaceRequest.current = controller;
+    const { signal } = controller;
     setLoading(true);
     setBusy(true);
     setError(null);
     try {
+      const location = readViewLocation();
+      const requestRevision = location.commit ?? location.revision;
       const repoData = await api<Repo>("/api/repo");
-      const requestRevision = "HEAD";
-      const [commitData, treeData, statusData] = await Promise.all([
+      const [commitData, treeData, statusData, commitView] = await Promise.all([
         api<{ commits: Commit[]; hasMore: boolean; total: number }>(
-          `/api/commits?revision=${requestRevision}&offset=0&limit=50`,
+          `/api/commits?revision=${encodeURIComponent(location.revision)}&offset=0&limit=50`,
         ),
         api<{ entries: TreeEntry[]; revision: string }>(
-          `/api/tree?revision=${requestRevision}&path=`,
+          `/api/tree?revision=${encodeURIComponent(requestRevision)}&path=`,
         ),
         loadStatus(),
+        location.commit ? loadCommitView(location.commit, signal) : null,
       ]);
+      const local = !repoData.bare && isHeadRevision(requestRevision, repoData);
+      let entry: TreeEntry | null = null;
+      let file: FileView | null = null;
+      let diff: DiffView | null = null;
+      let label = "Select a file";
+      let selected: string | null = null;
+      if (location.view?.kind === "file") {
+        entry = await findFileEntry(
+          location.view.path,
+          treeData.entries,
+          requestRevision,
+          local ? localFilePaths(statusData) : [],
+          signal,
+        );
+        file = await loadFile(entry, requestRevision, statusData, local, signal);
+        label = entry.path;
+      } else if (location.view?.kind === "diff") {
+        const { source, path } = location.view;
+        diff =
+          path === undefined && commitView
+            ? commitView.diff
+            : await api<DiffView>(
+                `/api/diff?source=${source}&revision=${encodeURIComponent(requestRevision)}&path=${encodeURIComponent(path!)}`,
+                signal,
+              );
+        label =
+          path ??
+          `${commitData.commits.find((commit) => commit.id === location.commit)?.shortId ?? location.commit!.slice(0, 7)} changes`;
+        selected = path === undefined ? null : `${source}:${path}`;
+      }
+      if (signal.aborted) return;
       setRepo(repoData);
       setCommits(commitData.commits);
       setCommitTotal(commitData.total);
@@ -257,28 +354,45 @@ export default function App() {
       setSearchQuery(null);
       setStatus(statusData);
       setRevision(requestRevision);
-      setHistoryRevision(requestRevision);
+      setHistoryRevision(location.revision);
       setHistoryPages(1);
       setSelectedBranchRevision(
-        repoData.branches.find((branch) => branch.name === repoData.head)?.revision ?? "HEAD",
+        location.revision === "HEAD"
+          ? (repoData.branches.find((branch) => branch.name === repoData.head)?.revision ?? "HEAD")
+          : location.revision,
       );
-      setSelectedCommit(null);
-      setCommitChanges([]);
-      setSelectedChange(null);
-      setFileView(null);
-      setDiffView(null);
-      setViewLabel("Select a file");
+      setSelectedCommit(location.commit);
+      setCommitChanges(commitView?.changes ?? []);
+      setSelectedChange(selected);
+      setFileEntry(entry);
+      setFileView(file);
+      setDiffView(diff);
+      setFocusLine(undefined);
+      setViewLabel(label);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Could not load the repository.");
+      if (!signal.aborted) {
+        setRepo(null);
+        setError(reason instanceof Error ? reason.message : "Could not load the repository.");
+      }
     } finally {
-      setLoading(false);
-      setBusy(false);
+      if (!signal.aborted) {
+        workspaceRequest.current = null;
+        setLoading(false);
+        setBusy(false);
+      }
     }
   }, []);
 
   useEffect(() => {
-    void loadWorkspace();
-    return () => previewRequest.current?.abort();
+    const restore = () => void loadWorkspace();
+    restore();
+    window.addEventListener("popstate", restore);
+    return () => {
+      window.removeEventListener("popstate", restore);
+      navigationVersion.current++;
+      workspaceRequest.current?.abort();
+      previewRequest.current?.abort();
+    };
   }, [loadWorkspace]);
 
   useEffect(() => {
@@ -302,11 +416,7 @@ export default function App() {
       const { signal } = previewController;
       try {
         if (openFilePath && fileEntry) {
-          const local =
-            !repoData.bare &&
-            (revision === "HEAD" ||
-              revision ===
-                repoData.branches.find((branch) => branch.name === repoData.head)?.revision);
+          const local = !repoData.bare && isHeadRevision(revision, repoData);
           const data = await loadFile(fileEntry, revision, statusData, local, signal);
           if (signal.aborted) return;
           setFileView(data);
@@ -440,38 +550,41 @@ export default function App() {
 
   async function chooseCommit(commit: Commit) {
     cancelPreview();
+    const requestVersion = ++navigationVersion.current;
     setBusy(true);
     setError(null);
     try {
-      const [treeData, diffData] = await Promise.all([
+      const [treeData, commitView] = await Promise.all([
         api<{ entries: TreeEntry[] }>(`/api/tree?revision=${encodeURIComponent(commit.id)}&path=`),
-        api<DiffView>(`/api/diff?source=commit&revision=${encodeURIComponent(commit.id)}`),
+        loadCommitView(commit.id),
       ]);
-      const changesData = diffData.truncated
-        ? await api<DiffView>(
-            `/api/diff?source=commit&revision=${encodeURIComponent(commit.id)}&statsOnly=true`,
-          )
-        : diffData;
+      if (requestVersion !== navigationVersion.current) return;
       setTree(treeData.entries);
       setFileView(null);
       setSearchQuery(null);
-      setDiffView(diffData);
+      setDiffView(commitView.diff);
       setSelectedChange(null);
       setRevision(commit.id);
       setSelectedCommit(commit.id);
-      setCommitChanges(
-        changesData.files.map((file) => ({ ...file, source: "commit", stats: file })),
-      );
+      setCommitChanges(commitView.changes);
       setViewLabel(`${commit.shortId} changes`);
+      writeViewLocation({
+        revision: historyRevision,
+        commit: commit.id,
+        view: { kind: "diff", source: "commit" },
+      });
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Could not load the commit.");
+      if (requestVersion === navigationVersion.current) {
+        setError(reason instanceof Error ? reason.message : "Could not load the commit.");
+      }
     } finally {
-      setBusy(false);
+      if (requestVersion === navigationVersion.current) setBusy(false);
     }
   }
 
   async function chooseRevision(nextRevision: string) {
     cancelPreview();
+    const requestVersion = ++navigationVersion.current;
     setBusy(true);
     setError(null);
     try {
@@ -483,6 +596,7 @@ export default function App() {
           `/api/tree?revision=${encodeURIComponent(nextRevision)}&path=`,
         ),
       ]);
+      if (requestVersion !== navigationVersion.current) return;
       setCommits(commitData.commits);
       setCommitTotal(commitData.total);
       setHasMore(commitData.hasMore);
@@ -502,16 +616,19 @@ export default function App() {
       setFileView(null);
       setDiffView(null);
       setViewLabel("Select a file");
+      writeViewLocation({ revision: nextRevision, commit: null, view: null });
     } catch (reason) {
-      setError(
-        reason instanceof Error
-          ? reason.message
-          : nextRevision === "HEAD"
-            ? "Could not load HEAD."
-            : "Could not load the branch.",
-      );
+      if (requestVersion === navigationVersion.current) {
+        setError(
+          reason instanceof Error
+            ? reason.message
+            : nextRevision === "HEAD"
+              ? "Could not load HEAD."
+              : "Could not load the branch.",
+        );
+      }
     } finally {
-      setBusy(false);
+      if (requestVersion === navigationVersion.current) setBusy(false);
     }
   }
 
@@ -527,6 +644,11 @@ export default function App() {
       setSelectedChange(null);
       setFileEntry(entry);
       setViewLabel(entry.path);
+      writeViewLocation({
+        revision: historyRevision,
+        commit: selectedCommit,
+        view: { kind: "file", path: entry.path },
+      });
     } catch (reason) {
       if (!signal.aborted) {
         setError(reason instanceof Error ? reason.message : "Could not load the file.");
@@ -552,6 +674,11 @@ export default function App() {
       setFileView(null);
       setSelectedChange(changeKey({ ...entry, source }));
       setViewLabel(entry.path);
+      writeViewLocation({
+        revision: historyRevision,
+        commit: selectedCommit,
+        view: { kind: "diff", source, path: entry.path },
+      });
     } catch (reason) {
       if (!signal.aborted) {
         setError(reason instanceof Error ? reason.message : "Could not load the diff.");
@@ -565,19 +692,23 @@ export default function App() {
   }
 
   async function loadMore() {
+    const requestVersion = ++navigationVersion.current;
     setBusy(true);
     try {
       const data = await api<{ commits: Commit[]; hasMore: boolean; total: number }>(
         `/api/commits?revision=${encodeURIComponent(historyRevision)}&offset=${commits.length}&limit=50`,
       );
+      if (requestVersion !== navigationVersion.current) return;
       setCommits((current) => [...current, ...data.commits]);
       setCommitTotal(data.total);
       setHistoryPages(Math.ceil((commits.length + data.commits.length) / 50));
       setHasMore(data.hasMore);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Could not load history.");
+      if (requestVersion === navigationVersion.current) {
+        setError(reason instanceof Error ? reason.message : "Could not load history.");
+      }
     } finally {
-      setBusy(false);
+      if (requestVersion === navigationVersion.current) setBusy(false);
     }
   }
 
@@ -616,11 +747,7 @@ export default function App() {
     () => buildChangeDecorations(Object.values(status).flat()),
     [status],
   );
-  const localPaths = viewingHead
-    ? [...status.untracked, ...status.staged, ...status.unstaged]
-        .filter((entry) => ["untracked", "added", "renamed", "copied"].includes(entry.status))
-        .map((entry) => entry.path)
-    : [];
+  const localPaths = viewingHead ? localFilePaths(status) : [];
   const fileCount = mergeLocalEntries(tree, localPaths).length;
   const showHeadOption = Boolean(
     repo && (!repo.head || !repo.branches.some((branch) => branch.name === repo.head)),
@@ -705,6 +832,7 @@ export default function App() {
                 key={revision}
                 entries={tree}
                 selectedPath={fileView?.path}
+                revealPath={fileView?.path ?? (selectedChange ? viewLabel : undefined)}
                 decorations={viewingHead ? fileDecorations : undefined}
                 localPaths={localPaths}
                 refreshVersion={refreshVersion}
@@ -745,6 +873,11 @@ export default function App() {
                     setDiffView(null);
                     setSelectedChange(null);
                     setViewLabel("Select a file");
+                    writeViewLocation({
+                      revision: historyRevision,
+                      commit: selectedCommit,
+                      view: null,
+                    });
                   }}
                 >
                   <svg
@@ -798,6 +931,7 @@ export default function App() {
               setSearchError(null);
               setSearchQuery(searchInput.current!.value);
               setSearchVersion((version) => version + 1);
+              writeViewLocation({ revision: historyRevision, commit: selectedCommit, view: null });
             }}
           >
             <input

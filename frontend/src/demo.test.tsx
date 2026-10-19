@@ -23,6 +23,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
   Reflect.deleteProperty(Element.prototype, "scrollIntoView");
   document.title = "gitto";
+  window.history.replaceState(null, "", "/");
 });
 
 describe("Interactive demo", () => {
