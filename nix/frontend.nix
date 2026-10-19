@@ -16,12 +16,12 @@ let
 in
 pkgs.stdenvNoCC.mkDerivation {
   pname = "gitto-frontend";
-  version = "0.1.0";
+  version = "0.2.0";
   inherit src;
 
   pnpmDeps = pkgs.fetchPnpmDeps {
     pname = "gitto-frontend";
-    version = "0.1.0";
+    version = "0.2.0";
     inherit src;
     pnpm = pkgs.pnpm;
     fetcherVersion = 4;
