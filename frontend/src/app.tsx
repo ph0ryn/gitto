@@ -582,7 +582,8 @@ export default function App() {
     }
   }
 
-  async function chooseRevision(nextRevision: string) {
+  async function chooseRevision(requestedRevision: string) {
+    const nextRevision = isHeadRevision(requestedRevision, repo) ? "HEAD" : requestedRevision;
     cancelPreview();
     const requestVersion = ++navigationVersion.current;
     setBusy(true);

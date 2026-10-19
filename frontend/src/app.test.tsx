@@ -220,6 +220,51 @@ describe("URL view state", () => {
     },
   );
 
+  it.each(["main", "feature"])(
+    "keeps the checked-out %s branch implicit when selecting it",
+    async (head) => {
+      installFetch({
+        repoData: {
+          ...repo,
+          head,
+          branches: [...repo.branches, { name: "feature", revision: "refs/heads/feature" }],
+        },
+      });
+      const currentRef = `refs/heads/${head}`;
+      const otherRef = `refs/heads/${head === "main" ? "feature" : "main"}`;
+      const user = userEvent.setup();
+      const initial = render(<App />);
+      const branch = await screen.findByRole("combobox", { name: "Branch" });
+      expect(branch).toHaveValue(currentRef);
+      expect(window.location.search).toBe("");
+
+      await user.selectOptions(branch, currentRef);
+      await waitFor(() => expect(branch).toBeEnabled());
+      expect(window.location.search).toBe("");
+      await user.selectOptions(branch, otherRef);
+      await waitFor(() =>
+        expect(new URLSearchParams(window.location.search).get("rev")).toBe(otherRef),
+      );
+      await user.selectOptions(branch, currentRef);
+      await waitFor(() => expect(window.location.search).toBe(""));
+
+      await user.click(screen.getByRole("button", { name: "README.md" }));
+      await screen.findByRole("heading", { name: "README.md" });
+      expect(new URLSearchParams(window.location.search).has("rev")).toBe(false);
+      expect(new URLSearchParams(window.location.search).get("path")).toBe("README.md");
+      await user.click(screen.getByRole("button", { name: /最初のコミット/ }));
+      await screen.findByRole("heading", { name: "abc1234 changes" });
+      expect(new URLSearchParams(window.location.search).has("rev")).toBe(false);
+      await user.selectOptions(branch, currentRef);
+      await waitFor(() => expect(window.location.search).toBe(""));
+
+      initial.unmount();
+      render(<App />);
+      expect(await screen.findByRole("combobox", { name: "Branch" })).toHaveValue(currentRef);
+      expect(await screen.findByText("Open a file")).toBeVisible();
+    },
+  );
+
   it("restores a historical commit with its branch history and keeps a closed diff closed", async () => {
     const fetchMock = installFetch({
       repoData: {
@@ -1941,11 +1986,12 @@ describe("App", () => {
     await user.click(await screen.findByRole("button", { name: /最初のコミット/ }));
     await waitFor(() => expect(document.querySelector(".diff-table")).toBeInTheDocument());
     expect(screen.getByLabelText("Branch")).toHaveValue("abc123456789");
+    fetchMock.mockClear();
     await user.selectOptions(screen.getByLabelText("Branch"), "refs/heads/main");
 
     await waitFor(() => expect(document.querySelector(".diff-table")).not.toBeInTheDocument());
     expect(screen.getByLabelText("Branch")).toHaveValue("refs/heads/main");
-    expect(fetchMock).toHaveBeenCalledWith("/api/tree?revision=refs%2Fheads%2Fmain&path=");
+    expect(fetchMock).toHaveBeenCalledWith("/api/tree?revision=HEAD&path=");
   });
 
   it.each([
