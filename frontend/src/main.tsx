@@ -2,6 +2,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 
 import App from "./app";
+import RepositorySession from "./repositorySession";
 import "./styles.css";
 
 if (import.meta.env.MODE === "demo") {
@@ -11,6 +12,8 @@ if (import.meta.env.MODE === "demo") {
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <App />
+    <RepositorySession>
+      <App />
+    </RepositorySession>
   </StrictMode>,
 );

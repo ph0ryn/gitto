@@ -944,18 +944,77 @@ summary.tree-row::-webkit-details-marker {
   color: var(--muted);
   text-align: center;
 }
-.app-state strong {
+.repository-session {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  overflow: hidden;
+}
+.repository-session > .app-shell {
+  flex: 1;
+  min-height: 0;
+  height: auto;
+}
+.session-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  padding: 4px 12px;
+  border-bottom: 1px solid var(--line);
+  background: var(--sidebar);
+}
+.session-confirmation {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px 24px;
+  max-height: 50dvh;
+  overflow: auto;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--line);
+  background: var(--sidebar);
+}
+.session-confirmation p {
+  max-width: 80ch;
+  color: var(--muted);
+}
+.session-confirmation [role="alert"] {
+  color: var(--deleted);
+}
+.session-actions {
+  display: flex;
+  gap: 8px;
+}
+.app-state strong,
+.app-state h1 {
   color: var(--ink);
   font-size: 15px;
 }
 .app-state p {
   font-size: 13px;
 }
-.app-state button {
+.app-state button,
+.session-toolbar button,
+.session-actions button {
   padding: 8px 14px;
   border: 1px solid var(--line);
   border-radius: 5px;
   background: var(--surface);
+}
+.session-toolbar button {
+  padding: 4px 10px;
+  font-size: 12px;
+}
+.session-toolbar button:hover,
+.session-actions button:hover {
+  background: var(--hover);
+}
+.session-actions button:disabled {
+  color: var(--muted);
+}
+.repository-session > .app-state {
+  min-height: 0;
+  height: auto;
+  flex: 1;
 }
 .loading-block {
   width: 70px;

@@ -8,9 +8,13 @@ export default defineConfig({
     port: 5173,
     strictPort: true,
     proxy: {
-      "/api": {
-        target: "http://127.0.0.1:3000",
+      "^/r/[^/]+/api": {
+        target: "http://127.0.0.1:47319",
         changeOrigin: true,
+        bypass(request: { headers: { origin?: string } }) {
+          if (request.headers.origin === "http://127.0.0.1:5173")
+            request.headers.origin = "http://127.0.0.1:47319";
+        },
       },
     },
   },

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { api } from "./api";
 import ChangeTree, {
   buildChangeTree,
   buildChangeDecorations,
@@ -61,13 +62,6 @@ const EMPTY_STATUS: Status = {
   untracked: [],
   conflicts: [],
 };
-
-async function api<T>(url: string, signal?: AbortSignal): Promise<T> {
-  const response = await (signal ? fetch(url, { signal }) : fetch(url));
-  const data = (await response.json()) as T & { error?: string };
-  if (!response.ok) throw new Error(data.error ?? `HTTP ${response.status}`);
-  return data;
-}
 
 async function loadStatus(signal?: AbortSignal): Promise<Status> {
   const status = await api<Status>("/api/status", signal);
@@ -305,6 +299,7 @@ export default function App() {
       const location = readViewLocation();
       const requestRevision = location.commit ?? location.revision;
       const repoData = await api<Repo>("/api/repo");
+      if (signal.aborted) return;
       const [commitData, treeData, statusData, commitView] = await Promise.all([
         api<{ commits: Commit[]; hasMore: boolean; total: number }>(
           `/api/commits?revision=${encodeURIComponent(location.revision)}&offset=0&limit=50`,
@@ -312,7 +307,7 @@ export default function App() {
         api<{ entries: TreeEntry[]; revision: string }>(
           `/api/tree?revision=${encodeURIComponent(requestRevision)}&path=`,
         ),
-        loadStatus(),
+        loadStatus(signal),
         location.commit ? loadCommitView(location.commit, signal) : null,
       ]);
       const local = !repoData.bare && isHeadRevision(requestRevision, repoData);
