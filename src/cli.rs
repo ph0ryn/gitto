@@ -7,12 +7,18 @@ pub struct Cli {
     /// Repository path (subdirectories are also accepted)
     #[arg(default_value = ".")]
     pub path: PathBuf,
-    /// Listen on this port instead of an automatically allocated port
-    #[arg(long, default_value_t = 0)]
+    /// Use this fixed loopback port for the shared server
+    #[arg(long, default_value_t = 47319, value_parser = clap::value_parser!(u16).range(1..))]
     pub port: u16,
     /// Print the URL without opening a browser
     #[arg(long)]
     pub no_open: bool,
+    /// List registered repositories without starting the server
+    #[arg(long, visible_alias = "ls", conflicts_with_all = ["path", "no_open", "server"])]
+    pub list: bool,
+    /// Run the internal shared server in the foreground
+    #[arg(long, hide = true, conflicts_with_all = ["path", "no_open"])]
+    pub server: bool,
     /// Print gitto's license and third-party notices
     #[arg(long, exclusive = true)]
     pub licenses: bool,
@@ -23,11 +29,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn basic_command_uses_repository_path_and_automatic_port() {
+    fn basic_command_uses_repository_path_and_fixed_port() {
         let cli = Cli::try_parse_from(["gitto", "."]).unwrap();
         assert_eq!(cli.path, PathBuf::from("."));
-        assert_eq!(cli.port, 0);
+        assert_eq!(cli.port, 47319);
         assert!(!cli.no_open);
+        assert!(!cli.list);
+        assert!(!cli.server);
         assert!(!cli.licenses);
     }
 
@@ -37,6 +45,30 @@ mod tests {
         assert_eq!(cli.port, 3000);
         assert!(cli.no_open);
         assert!(Cli::try_parse_from(["gitto", "--port", "65536"]).is_err());
+    }
+
+    #[test]
+    fn zero_port_is_rejected() {
+        assert!(Cli::try_parse_from(["gitto", "--port", "0"]).is_err());
+    }
+
+    #[test]
+    fn list_aliases_are_flags_but_ls_remains_a_path() {
+        for flag in ["--list", "--ls"] {
+            let cli = Cli::try_parse_from(["gitto", flag, "--port", "5000"]).unwrap();
+            assert!(cli.list);
+            assert_eq!(cli.port, 5000);
+        }
+        let cli = Cli::try_parse_from(["gitto", "ls"]).unwrap();
+        assert_eq!(cli.path, PathBuf::from("ls"));
+        assert!(!cli.list);
+    }
+
+    #[test]
+    fn server_mode_is_internal_and_hidden_from_help() {
+        assert!(Cli::try_parse_from(["gitto", "--server"]).unwrap().server);
+        let help = Cli::try_parse_from(["gitto", "--help"]).unwrap_err();
+        assert!(!help.to_string().contains("--server"));
     }
 
     #[test]

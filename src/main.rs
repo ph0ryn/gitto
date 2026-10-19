@@ -1,7 +1,9 @@
 mod api;
 mod assets;
 mod cli;
+mod daemon;
 mod git;
+mod registry;
 mod server;
 
 use clap::Parser;
@@ -23,7 +25,12 @@ async fn main() {
         }
         return;
     }
-    if let Err(error) = server::run(cli).await {
+    let result = if cli.server {
+        server::run(cli).await
+    } else {
+        daemon::run(cli).await
+    };
+    if let Err(error) = result {
         eprintln!("gitto: {error}");
         std::process::exit(1);
     }
