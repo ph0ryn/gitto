@@ -12,6 +12,7 @@ import { lineChanges, type LineChange } from "./diffLines";
 import DiffViewer, { type DiffFile, type DiffView } from "./diffViewer";
 import EntryIcon from "./entryIcon";
 import FileTree, { mergeLocalEntries, type TreeEntry } from "./fileTree";
+import { RepositoryCloseButton } from "./repositorySession";
 import SearchResults, { type SearchResult } from "./searchResults";
 import { readViewLocation, writeViewLocation } from "./viewLocation";
 
@@ -816,6 +817,7 @@ export default function App() {
                   ))
                 : !showHeadOption && <option value="HEAD">No branches</option>}
             </select>
+            <RepositoryCloseButton />
           </div>
           <div className="pane-toolbar">
             <h2>{repo?.name}</h2>

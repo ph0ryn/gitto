@@ -1,10 +1,16 @@
-import { useEffect, useRef, useState } from "react";
+import { createContext, useContext, useEffect, useRef, useState } from "react";
 
 import { ApiError, postApi, repositoryBasePath } from "./api";
 
 import type { ReactNode } from "react";
 
 type SessionState = "connecting" | "connected" | "reconnecting" | "closed";
+
+const RepositoryCloseContext = createContext<ReactNode>(null);
+
+export function RepositoryCloseButton() {
+  return useContext(RepositoryCloseContext);
+}
 
 function wasClosed(key: string | null): boolean {
   if (!key) return false;
@@ -24,11 +30,8 @@ export default function RepositorySession({ children }: { children: ReactNode })
     wasClosed(closeKey) ? "closed" : "connecting",
   );
   const [notificationFailed, setNotificationFailed] = useState(false);
-  const [confirmClose, setConfirmClose] = useState(false);
   const [closing, setClosing] = useState(false);
   const [closeError, setCloseError] = useState<string | null>(null);
-  const closeButton = useRef<HTMLButtonElement>(null);
-  const cancelButton = useRef<HTMLButtonElement>(null);
   const closeRequest = useRef<AbortController | null>(null);
   const closed = state === "closed";
 
@@ -87,10 +90,6 @@ export default function RepositorySession({ children }: { children: ReactNode })
       closeRequest.current?.abort();
     }
   }, [closed]);
-
-  useEffect(() => {
-    if (confirmClose) cancelButton.current?.focus();
-  }, [confirmClose, state]);
 
   useEffect(() => () => closeRequest.current?.abort(), []);
 
@@ -159,52 +158,35 @@ export default function RepositorySession({ children }: { children: ReactNode })
 
   return (
     <div className="repository-session">
-      <div className="session-toolbar">
-        <button
-          ref={closeButton}
-          aria-expanded={confirmClose}
-          aria-controls={confirmClose ? "close-repository-confirmation" : undefined}
-          onClick={() => setConfirmClose(true)}
-          disabled={closing}
-        >
-          Close repository
-        </button>
-      </div>
-      {confirmClose && (
-        <div
-          id="close-repository-confirmation"
-          className="session-confirmation"
-          role="group"
-          aria-labelledby="close-repository-title"
-        >
-          <div>
-            <strong id="close-repository-title">Close repository in all tabs?</strong>
-            <p>
-              This removes its registration from gitto and closes this repository in every tab. Your
-              Git repository and working tree will not change.
-            </p>
-            {closeError && <p role="alert">{closeError}</p>}
-          </div>
-          <div className="session-actions">
-            <button
-              ref={cancelButton}
-              disabled={closing}
-              onClick={() => {
-                setConfirmClose(false);
-                setCloseError(null);
-                // The trigger stays mounted, so keyboard focus returns to the originating action.
-                closeButton.current?.focus();
-              }}
-            >
-              Cancel
-            </button>
-            <button disabled={closing} onClick={() => void closeRepository()}>
-              {closing ? "Closing…" : "Close all tabs"}
-            </button>
-          </div>
-        </div>
+      {closeError && (
+        <p className="session-error" role="alert">
+          {closeError}
+        </p>
       )}
-      {children}
+      <RepositoryCloseContext.Provider
+        value={
+          <button
+            className="icon-button repository-close-button"
+            aria-label="Close repository"
+            title="Close repository"
+            onClick={() => void closeRepository()}
+            disabled={closing}
+          >
+            <svg
+              className="ui-icon"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              aria-hidden="true"
+            >
+              <path d="m7 7 10 10M7 17 17 7" />
+            </svg>
+          </button>
+        }
+      >
+        {children}
+      </RepositoryCloseContext.Provider>
     </div>
   );
 }

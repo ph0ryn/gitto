@@ -78,6 +78,18 @@ describe("Repository session", () => {
     ).toBe(true);
   });
 
+  it("places an accessible close icon immediately after the branch selector", async () => {
+    vi.useFakeTimers();
+    installFetch();
+    await mount();
+    const branch = screen.getByRole("combobox", { name: "Branch" });
+    const close = screen.getByRole("button", { name: "Close repository" });
+    expect(branch.nextElementSibling).toBe(close);
+    expect(close).not.toHaveTextContent(/\S/);
+    expect(close).toHaveAttribute("title", "Close repository");
+    expect(close.querySelector("svg")).toHaveAttribute("aria-hidden", "true");
+  });
+
   it("never closes on pagehide, beforeunload, unload, or component unmount", async () => {
     vi.useFakeTimers();
     const fetchMock = installFetch();
@@ -92,7 +104,7 @@ describe("Repository session", () => {
     ).toBe(false);
   });
 
-  it("explains repository-wide close, supports cancel, and clears all repository content on success", async () => {
+  it("closes immediately without confirmation and clears all repository content on success", async () => {
     vi.useFakeTimers();
     const fetchMock = installFetch();
     await mount();
@@ -101,21 +113,9 @@ describe("Repository session", () => {
       "hello-gitto",
     );
     await click("Close repository");
-    const confirmation = screen.getByRole("group", { name: "Close repository in all tabs?" });
-    expect(confirmation).toHaveTextContent(/removes its registration/i);
-    expect(confirmation).toHaveTextContent(/every tab/i);
-    expect(confirmation).toHaveTextContent(/Git repository and working tree will not change/i);
-    expect(
-      fetchMock.mock.calls.some(([url]) => typeof url === "string" && url.endsWith("/close")),
-    ).toBe(false);
-    await click("Cancel");
     expect(
       screen.queryByRole("group", { name: "Close repository in all tabs?" }),
     ).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Close repository" })).toHaveFocus();
-    expect(localStorage.getItem(closeKey)).toBeNull();
-    await click("Close repository");
-    await click("Close all tabs");
     expect(fetchMock).toHaveBeenCalledWith(`${base}/api/close`, {
       method: "POST",
       headers: { "X-Gitto-Request": "1" },
@@ -132,6 +132,27 @@ describe("Repository session", () => {
     expect(fetchMock).toHaveBeenCalledTimes(count);
   });
 
+  it("disables the close icon while the immediate close request is pending", async () => {
+    vi.useFakeTimers();
+    const fetchMock = installFetch();
+    const originalFetch = fetchMock.getMockImplementation()!;
+    let resolveClose!: (value: Response) => void;
+    const pendingClose = new Promise<Response>((resolve) => {
+      resolveClose = resolve;
+    });
+    fetchMock.mockImplementation((input, init) =>
+      input === `${base}/api/close` ? pendingClose : originalFetch(input, init),
+    );
+    await mount();
+    await click("Close repository");
+    expect(screen.getByRole("button", { name: "Close repository" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Close all tabs" })).not.toBeInTheDocument();
+    await click("Close repository");
+    expect(fetchMock.mock.calls.filter(([url]) => url === `${base}/api/close`)).toHaveLength(1);
+    await act(async () => resolveClose(Response.json({})));
+    expect(screen.getByRole("heading", { name: "Repository closed" })).toBeVisible();
+  });
+
   it("keeps the repository open after a failed close and lets the user retry", async () => {
     vi.useFakeTimers();
     const fetchMock = installFetch();
@@ -144,15 +165,15 @@ describe("Repository session", () => {
     );
     await mount();
     await click("Close repository");
-    await click("Close all tabs");
     expect(screen.getByRole("alert")).toHaveTextContent(/Could not close repository/);
     expect(screen.getByRole("alert")).toHaveTextContent("Temporarily unavailable");
     expect(localStorage.getItem(closeKey)).toBeNull();
     expect(screen.getByRole("heading", { name: "hello-gitto" })).toBeVisible();
     await advance(2000);
     expect(screen.queryByRole("heading", { name: "Repository closed" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Close repository" })).toBeEnabled();
     closeFails = false;
-    await click("Close all tabs");
+    await click("Close repository");
     expect(screen.getByRole("heading", { name: "Repository closed" })).toBeVisible();
   });
 
@@ -207,7 +228,6 @@ describe("Repository session", () => {
     const fetchMock = installFetch();
     const result = await mount();
     await click("Close repository");
-    await click("Close all tabs");
     result.unmount();
     fetchMock.mockClear().mockRejectedValue(new TypeError("Failed to fetch"));
     await mount();
@@ -240,7 +260,6 @@ describe("Repository session", () => {
       throw new DOMException("Storage denied", "SecurityError");
     });
     await click("Close repository");
-    await click("Close all tabs");
     expect(screen.getByRole("heading", { name: "Repository closed" })).toBeVisible();
     expect(screen.getByRole("alert")).toHaveTextContent(/could not notify other tabs/i);
     expect(document.body).not.toHaveTextContent("hello-gitto");
@@ -337,9 +356,8 @@ describe("Repository session", () => {
       input === `${base}/api/heartbeat` ? pendingHeartbeat : originalFetch(input, init),
     );
     await advance(2000);
-    await click("Close repository");
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "Close all tabs" }));
+      fireEvent.click(screen.getByRole("button", { name: "Close repository" }));
       resolveHeartbeat(Response.json({}));
     });
     expect(screen.getByRole("heading", { name: "Repository closed" })).toBeVisible();
