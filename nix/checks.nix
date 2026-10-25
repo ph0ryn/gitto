@@ -20,7 +20,6 @@ let
   };
 
   frontendSource = frontend.src;
-  frontendDeps = frontend.pnpmDeps;
 
   rustClippy = pkgs.rustPlatform.buildRustPackage {
     pname = "gitto-backend-clippy";
@@ -69,26 +68,39 @@ let
 
   pnpmCheck =
     name: script:
-    pkgs.stdenvNoCC.mkDerivation {
-      pname = "gitto-frontend-${name}";
-      version = "0.2.1";
-      src = frontendSource;
-      pnpmDeps = frontendDeps;
-      nativeBuildInputs = [
-        pkgs.nodejs_24
-        pkgs.pnpm
-        pkgs.pnpmConfigHook
-      ];
-      buildPhase = ''
-        runHook preBuild
-        export VP_PACKAGE_MANAGER="pnpm@${pkgs.pnpm.version}"
-        pnpm run ${script}
-        runHook postBuild
-      '';
-      installPhase = ''
-        mkdir -p "$out"
-        touch "$out/checked"
-      '';
+    let
+      recipe = pkgs.stdenvNoCC.mkDerivation {
+        pname = "gitto-frontend-${name}";
+        version = "0.2.1";
+        src = frontendSource;
+        inherit (frontend) nativeBuildInputs configurePhase impureEnvVars;
+        env.CI = "true";
+        dontFixup = true;
+        # A predictable success marker must not be accepted from a substituter.
+        allowSubstitutes = false;
+        preferLocalBuild = true;
+        buildPhase = ''
+          runHook preBuild
+          export VP_PACKAGE_MANAGER="pnpm@${pkgs.pnpm.version}"
+          pnpm run ${script}
+          ${pkgs.lib.optionalString (script == "build") ''
+            diff -r ${frontend}/dist dist
+          ''}
+          runHook postBuild
+        '';
+        installPhase = ''
+          printf %s "$checkKey" > "$out"
+        '';
+      };
+      # Networked checks must invalidate on source, tool, or check recipe changes,
+      # even when those changes leave the frontend's dist output unchanged.
+      checkKey = builtins.hashString "sha256" (builtins.unsafeDiscardStringContext recipe.drvPath);
+    in
+    recipe.overrideAttrs {
+      inherit checkKey;
+      outputHashAlgo = "sha256";
+      outputHashMode = "flat";
+      outputHash = builtins.hashString "sha256" checkKey;
     };
 
 in
@@ -99,6 +111,6 @@ in
   frontend-tests = pnpmCheck "tests" "test";
   frontend-format = pnpmCheck "format" "format:check";
   frontend-check = pnpmCheck "check" "check";
-  frontend-build = frontend;
+  frontend-build = pnpmCheck "build" "build";
   inherit gitto;
 }

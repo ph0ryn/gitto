@@ -19,20 +19,28 @@ pkgs.stdenvNoCC.mkDerivation {
   version = "0.2.1";
   inherit src;
 
-  pnpmDeps = pkgs.fetchPnpmDeps {
-    pname = "gitto-frontend";
-    version = "0.2.1";
-    inherit src;
-    pnpm = pkgs.pnpm;
-    fetcherVersion = 4;
-    hash = "sha256-5zJC+zrFaYRqVhuBWhiDfnyL2JWnJfDMD1amew8XyR0=";
-  };
+  # Verify the built assets, not the package manager's internal store format.
+  outputHashAlgo = "sha256";
+  outputHashMode = "recursive";
+  outputHash = "sha256-xf1TiRQ7MKoD1v6wpiT477eu3PKIEk4oiY4getb1RVA=";
 
   nativeBuildInputs = [
     pkgs.nodejs_24
     pkgs.pnpm
-    pkgs.pnpmConfigHook
+    pkgs.cacert
+    pkgs.writableTmpDirAsHomeHook
   ];
+
+  impureEnvVars = pkgs.lib.fetchers.proxyImpureEnvVars;
+  env.CI = "true";
+
+  configurePhase = ''
+    runHook preConfigure
+    export npm_config_manage_package_manager_versions=false
+    export pnpm_config_pm_on_fail=ignore
+    pnpm install --frozen-lockfile --ignore-scripts
+    runHook postConfigure
+  '';
 
   buildPhase = ''
     runHook preBuild

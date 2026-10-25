@@ -60,12 +60,10 @@
           pkgs = import nixpkgs {
             inherit system;
           };
-          gitto = self.packages.${system}.gitto;
         in
         {
           default = pkgs.mkShell {
             packages = [
-              gitto
               pkgs.cargo
               pkgs.clippy
               pkgs.cmake
