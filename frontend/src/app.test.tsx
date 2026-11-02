@@ -6,6 +6,7 @@ import { StrictMode } from "react";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 import App from "./app";
+import favicon from "./assets/favicon.ico";
 
 import type { TreeEntry } from "./fileTree";
 
@@ -1839,8 +1840,12 @@ describe("App", () => {
     const footer = screen.getByLabelText("Repository information");
     const githubLink = within(footer).getByRole("link", { name: "Gitto" });
     expect(githubLink).toHaveAttribute("href", "https://github.com/ph0ryn/gitto");
-    expect(githubLink.querySelector("svg")).toHaveAttribute("aria-hidden", "true");
-    expect(githubLink.firstElementChild?.tagName.toLowerCase()).toBe("svg");
+    const brandIcon = githubLink.firstElementChild;
+    expect(brandIcon?.tagName.toLowerCase()).toBe("img");
+    expect(brandIcon).toHaveAttribute("src", favicon);
+    expect(brandIcon).toHaveAttribute("alt", "");
+    expect(brandIcon).toHaveAttribute("width", "16");
+    expect(brandIcon).toHaveAttribute("height", "16");
     const details = [
       within(footer).getByText(repo.path),
       within(footer).getByText("HEAD · abc1234"),
