@@ -1,10 +1,15 @@
-# gitto
+<h1 align="center">
+  <img src="docs/logo.png" alt="gitto" width="480">
+</h1>
+
+<p align="center">
+  ローカルのGitリポジトリをブラウザーで閲覧する、読み取り専用のCLIです。
+</p>
 
 <p align="center">
   <img src="docs/screenshot.png" alt="gitto screenshot" width="800">
 </p>
 
-ローカルのGitリポジトリをブラウザーで閲覧する、読み取り専用のCLIです。  
 コミット履歴、ブランチ・タグ、ファイル、staged／unstaged／untrackedの差分を表示します。
 
 ## Demo
