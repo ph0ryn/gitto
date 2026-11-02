@@ -22,7 +22,7 @@ pkgs.stdenvNoCC.mkDerivation {
   # Verify the built assets, not the package manager's internal store format.
   outputHashAlgo = "sha256";
   outputHashMode = "recursive";
-  outputHash = "sha256-xf1TiRQ7MKoD1v6wpiT477eu3PKIEk4oiY4getb1RVA=";
+  outputHash = "sha256-L1+aFIWLcXdWhqnUB9RsXH7GAXZ4s3G+EagZXcSnSCI=";
 
   nativeBuildInputs = [
     pkgs.nodejs_24
